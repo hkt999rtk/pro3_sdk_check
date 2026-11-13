@@ -24,6 +24,8 @@
 #include "video_common_type.h"
 #ifdef CONFIG_VMODULE_ADDREMAP
 #include "addremap_hal.h"
+#include "slice_sram.h"
+#include "isp_sensor.h"
 #endif
 #include "ainr_driver.h"
 #include "hal_isp.h"
@@ -615,17 +617,18 @@ static int isp_get_address_remap_ch(void)
 static void isp_sensor_start(void)
 {
 	static BOOL first = TRUE;
-	extern const struct rts_isp_sensor_ops *rts_isp_get_sensor_ops(void);
-	const struct rts_isp_sensor_ops *sensor_ops = rts_isp_get_sensor_ops();
-	//real sensor start function
-	if (first) {
-		if (rts_isp_get_remap_mode(ISP0) != 0) {
-			if (sensor_ops->start) {
-				sensor_ops->start(ISP0);
-				ISP_DBG_INFO("isp_sensor_start\n\r");
-			}
+	const struct rts_isp_sensor_ops *sensor_ops = NULL;
+	if (first && rts_isp_get_remap_mode(ISP0) != 0) {
+		if (isp_sensor_get_ops(ISP0, &sensor_ops) != 0 || !sensor_ops || !sensor_ops->start) {
+			ISP_DBG_ERROR("slice sensor start callback unavailable\r\n");
+			return;
+		}
+		if (sensor_ops->start(ISP0) != 0) {
+			ISP_DBG_ERROR("slice sensor start failed\r\n");
+			return;
 		}
 		first = FALSE;
+		ISP_DBG_INFO("isp_sensor_start\n\r");
 	}
 }
 #endif
@@ -807,7 +810,9 @@ static int isp_open(void)
 	//TODO: should be modified after isp control sw being ready
 	isp_remap_ch = isp_get_address_remap_ch();
 	if (isp_remap_ch != -1) {
-		isp_address_remap_pre_setup(g_isp.ctx[isp_remap_ch]);
+		if (isp_address_remap_pre_setup(g_isp.ctx[isp_remap_ch]) < 0) {
+			goto error;
+		}
 	}
 #endif
 
@@ -857,6 +862,18 @@ extern void ENC_addremap_IRQHandler(void);
 
 static int isp_address_remap_pre_setup(isp_ctx_t *ctx)
 {
+	uint32_t y_bytes;
+	isp_remap_param_t *param = ctx->params.remap_param;
+	if (param->feature_bit & REMAP_SLICE) {
+		if (param->feature_bit != (REMAP_SLICE | REMAP_RTT) ||
+			param->enc_type != ISP_REMAP_ENC_H264 || param->burst_id != 0 ||
+			ctx->params.stream_id != 0 || !ctx->params.height || ctx->params.height > 8192 ||
+			slice_sram_y_bytes(ctx->params.width, 16, param->wrap_num,
+				(uint32_t)__slice_vsram_end__ - (uint32_t)__slice_vsram_start__, &y_bytes) < 0) {
+			ISP_DBG_ERROR("SRAM slice requires CH0 H264 RTT, no compression/partial SRAM, and room for both Y/UV\r\n");
+			return -1;
+		}
+	}
 	int IRQ_Priority = INT_PRI_LOWEST;
 	InterruptRegister((IRQ_FUN)ISP_addremap_IRQHandler, ISP_REMAP_IRQ, (u32)NULL, IRQ_Priority);
 	InterruptEn(ISP_REMAP_IRQ, 0);
@@ -882,7 +899,7 @@ static int isp_address_remap_pre_setup(isp_ctx_t *ctx)
 	g_isp.remap_info.cfg.PaREnb = (feature_bit & BIT(4)) ? 1 : 0;
 	g_isp.remap_info.cfg.CompEnb = (feature_bit & BIT(5)) ? 1 : 0;
 	if (g_isp.remap_info.cfg.SWrapEnb) {
-		g_isp.remap_info.all_vsram = 0;  /* all slice to sram by default */
+		g_isp.remap_info.all_vsram = 1;  /* Y and UV must both reside in SRAM. */
 	}
 	ISP_DBG_INFO("isp remap all_vsram %d\r\n", g_isp.remap_info.all_vsram);
 	ISP_DBG_INFO("g_isp.remap_info.cfg hdr %d slice %d RTT %d parSRAM %d compress%d  \r\n", g_isp.remap_info.cfg.HdrEnb, g_isp.remap_info.cfg.SWrapEnb,
@@ -938,7 +955,9 @@ static int isp_address_remap_post_setup(isp_ctx_t *ctx)
 		uint32_t out_uv_addr;
 		extern int rtscam_soc_get_isp_remap_buf(uint32_t streamid, uint32_t buf_id, uint32_t *y_buf, uint32_t *uv_buf);
 		if (!g_isp.remap_info.cmpr_fr_mode) {
-			rtscam_soc_get_isp_remap_buf(ch, 0, &out_y_addr, &out_uv_addr);
+			if (rtscam_soc_get_isp_remap_buf(ch, 0, &out_y_addr, &out_uv_addr) < 0) {
+				return -1;
+			}
 			printf("ch0 slot0: out_y_addr: %x, out_uv_addr: %x\n\r", (int)out_y_addr, (int)out_uv_addr);
 			g_isp.io.io_buffer_ISP[ch][0].out_y_addr = out_y_addr;
 			g_isp.io.io_buffer_ISP[ch][0].out_y_size = ALIGN_UP(g_isp.remap_info.align_width * out_h, 4096);
@@ -949,7 +968,9 @@ static int isp_address_remap_post_setup(isp_ctx_t *ctx)
 			g_isp.io.io_buffer_ISP[ch][1].out_uv_addr = out_uv_addr;
 			g_isp.io.io_buffer_ISP[ch][1].out_uv_size = g_isp.remap_info.align_width * out_h / 2;
 		} else {
-			rtscam_soc_get_isp_remap_buf(ch, 0, &out_y_addr, &out_uv_addr);
+			if (rtscam_soc_get_isp_remap_buf(ch, 0, &out_y_addr, &out_uv_addr) < 0) {
+				return -1;
+			}
 			printf("ch0 slot0: out_y_addr: %x, out_uv_addr: %x\n\r", (int)out_y_addr, (int)out_uv_addr);
 			g_isp.io.io_buffer_ISP[ch][0].out_y_addr = out_y_addr;
 			g_isp.io.io_buffer_ISP[ch][0].out_y_size = ALIGN_UP(g_isp.remap_info.align_width * out_h, 4096);
@@ -982,22 +1003,21 @@ static int isp_address_remap_post_setup(isp_ctx_t *ctx)
 		}
 
 		if (g_isp.remap_info.all_vsram && !g_isp.remap_info.cmpr_fr_mode) {
-			if (((VSRAM_start + slice_out_size0 * 3 / 2) > (uint32_t)__vsram_end__) || g_isp.remap_info.cfg.PaREnb) {
-				g_isp.remap_info.slice_out_addr0 = g_isp.io.io_buffer_ISP[ch][0].out_y_addr;
-				//g_isp.remap_info.slice_out_addr1 = g_isp.io.io_buffer_ISP[ch][0].out_uv_addr;
-				ISP_DBG_WARNING("warning: can't put all slice at video sram slice_size %d PartialSRAM %d \r\n", slice_out_size0 * 3 / 2, g_isp.remap_info.cfg.PaREnb);
-			} else {
-				g_isp.remap_info.slice_out_addr0 = VSRAM_start;
-				//g_isp.remap_info.slice_out_addr1 = VSRAM_start + slice_out_size0;
+			if (g_isp.remap_info.cfg.PaREnb || g_isp.remap_info.cfg.CompEnb ||
+				slice_sram_y_bytes(out_w, g_isp.remap_info.cfg.SliceHeight, wrap_num,
+					(uint32_t)__slice_vsram_end__ - VSRAM_start, &slice_out_size0) < 0) {
+				ISP_DBG_ERROR("SRAM slice Y+UV allocation failed; no DRAM fallback\r\n");
+				return -1;
 			}
+			g_isp.remap_info.slice_out_addr0 = VSRAM_start;
+			g_isp.remap_info.slice_out_addr1 = VSRAM_start + slice_out_size0;
+			printf("[ISP SRAM] Y=0x%08lx bytes=%lu UV=0x%08lx bytes=%lu end=0x%08lx wrap=%lu\r\n",
+				(unsigned long)VSRAM_start, (unsigned long)slice_out_size0,
+				(unsigned long)g_isp.remap_info.slice_out_addr1, (unsigned long)(slice_out_size0 / 2),
+				(unsigned long)(VSRAM_start + slice_out_size0 * 3 / 2), (unsigned long)wrap_num);
 		} else {
 			g_isp.remap_info.slice_out_addr0 = g_isp.io.io_buffer_ISP[ch][0].out_y_addr;
-			//g_isp.remap_info.slice_out_addr1 = g_isp.io.io_buffer_ISP[ch][0].out_uv_addr;
-		}
-		if (g_isp.remap_info.cmpr_fr_mode || g_isp.remap_info.cfg.PaREnb) {
 			g_isp.remap_info.slice_out_addr1 = g_isp.io.io_buffer_ISP[ch][0].out_uv_addr;
-		} else {
-			g_isp.remap_info.slice_out_addr1 = g_isp.io.io_buffer_ISP[ch][0].out_uv_addr/*g_isp.remap_info.slice_out_addr0 + slice_out_size0*/;
 		}
 		if (!g_isp.remap_info.cmpr_fr_mode) {
 			g_isp.remap_info.cfg.slice_wrap_component[0].dram_saddr = g_isp.io.io_buffer_ISP[ch][0].out_y_addr;
@@ -1043,6 +1063,28 @@ static int isp_address_remap_post_setup(isp_ctx_t *ctx)
 			}
 			extern void set_enc_remap(struct enc_remap_config * config,  u32 zoom_w, u32 zoom_h);
 			set_enc_remap(&g_isp.enc_remap_info.cfg, out_w, out_h);
+			/* Verify both physical planes and the shared slice/RTT mode before sensor start. */
+			if (g_isp.remap_info.all_vsram) {
+				for (unsigned int plane = 0; plane < 2; plane++) {
+					uint32_t offset = plane ? 0x40 : 0x34;
+					uint32_t phys = g_isp.enc_remap_info.cfg.enc_remap_component[plane].dram_saddr;
+					uint32_t end = g_isp.enc_remap_info.cfg.enc_remap_component[plane].dram_eaddr;
+					if (HAL_READ32(REMAP_ISP_REG_BASE, offset) -
+						HAL_READ32(REMAP_ISP_REG_BASE, 0xE0 + plane * 4) != phys ||
+						HAL_READ32(REMAP_ENC_REG_BASE, offset) != phys ||
+						HAL_READ32(REMAP_ENC_REG_BASE, offset + 4) != end) {
+						ISP_DBG_ERROR("SRAM remap plane %u readback mismatch\r\n", plane);
+						return -1;
+					}
+				}
+				if (HAL_READ32(REMAP_ISP_REG_BASE, 0xC) != 0x10100 ||
+					HAL_READ32(REMAP_ENC_REG_BASE, 0xC) != 0x10100 ||
+					HAL_READ32(REMAP_ISP_REG_BASE, 0x30) != HAL_READ32(REMAP_ENC_REG_BASE, 0x30)) {
+					ISP_DBG_ERROR("SRAM remap mode/depth readback mismatch\r\n");
+					return -1;
+				}
+				printf("[ISP SRAM] Y/UV mapping readback OK; partial SRAM disabled\r\n");
+			}
 		}
 		if (g_isp.remap_info.cfg.CompEnb) {
 			g_isp.cmpr_header_y[0] = g_isp.remap_info.cfg.compress_component[0].headr_addr[0];

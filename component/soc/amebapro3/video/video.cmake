@@ -60,7 +60,7 @@ set(VIDEO_MODULE_LIST
 
 # Define which modules use prebuilt libraries (ON = prebuilt, OFF = build from source)
 set(VIDEO_MODULE_PREBUILT_MAP
-    "ADDREMAP:ON"
+    "ADDREMAP:OFF"
     "AINR:ON"
     "ENCODER:ON"
     "GE:OFF"

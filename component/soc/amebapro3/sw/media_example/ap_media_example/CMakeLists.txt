@@ -179,6 +179,14 @@ ameba_list_append(private_compile_options -w)
 #WARNING: Select right API based on your component's release/not-release/standalone
 
 ###NOTE: For open-source component, always build from source
+if(CONFIG_BUILD_ISP_SRAM_TEST)
+	# Only the UART comparison entry points; other examples require optional sinks.
+	set(private_sources
+		example_video_ap.c
+		video_example_src/video_test_tool/mmf2_video_cmd_test_tool.c
+	)
+endif()
+
 ameba_add_internal_library(ap_media_example
     p_SOURCES
         ${private_sources}

@@ -97,6 +97,18 @@ static int video_cmd_gen(char *cmd, int buf_len, video_params_t *v_param)
 	int total_len = buf_len;
 	char *p = cmd;
 
+	const unsigned long isp_slice = v_param->isp_slice_en;
+	if (isp_slice) {
+#if defined(CONFIG_VMODULE_ADDREMAP)
+		if (isp_slice != 1 || v_param->stream_id != 0 || v_param->format != VIDEO_H264 || v_param->ainr_en) {
+			VIDEO_DBG_ERROR("SRAM slice requires CH0 H264 and AINR off\r\n");
+			goto error;
+		}
+#else
+		VIDEO_DBG_ERROR("ISP slice requires addremap support\r\n");
+		goto error;
+#endif
+	}
 	/* convert to ISP output format */
 	uint32_t isp_fmt = 0;
 	if (v_param->format & (VIDEO_HEVC | VIDEO_H264 | VIDEO_JPEG | VIDEO_NV12)) {
@@ -121,12 +133,12 @@ static int video_cmd_gen(char *cmd, int buf_len, video_params_t *v_param)
 	p += len;
 
 	len = snprintf(p, total_len,
-				   "--isp%ld:w=%ld,h=%ld,fps=%ld,fmt=%ld ",
+				   "--isp%ld:w=%ld,h=%ld,fps=%ld,fmt=%ld,slice=%lu ",
 				   v_param->stream_id,
 				   v_param->width,
 				   v_param->height,
 				   v_param->fps,
-				   isp_fmt);
+				   isp_fmt, isp_slice);
 	if (len < 0 || len >= total_len) {
 		VIDEO_DBG_ERROR("error: fail to generate ISP command\r\n");
 		goto error;
@@ -136,7 +148,7 @@ static int video_cmd_gen(char *cmd, int buf_len, video_params_t *v_param)
 
 	if (v_param->format & (VIDEO_HEVC | VIDEO_H264 | VIDEO_JPEG)) {
 		len = snprintf(p, total_len,
-					   "--enc%ld:w=%ld,h=%ld,fps=%ld,gop=%ld,bps=%ld,rcmode=%ld,minqp=%ld,maxqp=%ld,qlevel=%ld,fmt=%ld",
+					   "--enc%ld:w=%ld,h=%ld,fps=%ld,gop=%ld,bps=%ld,rcmode=%ld,minqp=%ld,maxqp=%ld,qlevel=%ld,fmt=%ld,lowlatency=%lu",
 					   v_param->stream_id,
 					   v_param->width,
 					   v_param->height,
@@ -147,7 +159,7 @@ static int video_cmd_gen(char *cmd, int buf_len, video_params_t *v_param)
 					   v_param->min_qp,
 					   v_param->max_qp,
 					   v_param->qlevel,
-					   v_param->format);
+					   v_param->format, isp_slice);
 		if (len < 0 || len >= total_len) {
 			VIDEO_DBG_ERROR("error: fail to generate ENC command\r\n");
 			goto error;

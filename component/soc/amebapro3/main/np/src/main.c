@@ -141,7 +141,7 @@ int main(void)
 	/* init coex ipc */
 	coex_ipc_entry();
 #endif
-#if defined(CONFIG_WLAN) && (CONFIG_WLAN==1)
+#if defined(CONFIG_WLAN) && (CONFIG_WLAN==1) && !defined(CONFIG_BUILD_ISP_SRAM_TEST)
 	rtk_log_level_set(NOTAG, RTK_LOG_DEBUG);
 	rtk_log_level_set("WLAN", RTK_LOG_DEBUG);
 	extern void wifi_init(void);

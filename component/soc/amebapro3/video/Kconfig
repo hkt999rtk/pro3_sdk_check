@@ -39,11 +39,11 @@ menu "CONFIG VIDEO MODULES"
         bool "GE"
         default y
 
-    if !AMEBA_RLS
     config VMODULE_ADDREMAP
         bool "ADDREMAP"
         default n
 
+    if !AMEBA_RLS
     config VMODULE_SWISP2ENC
         bool "SWISP2ENC"
         default n

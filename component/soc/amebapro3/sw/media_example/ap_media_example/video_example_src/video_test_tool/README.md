@@ -433,3 +433,7 @@ On the board, enable only V2 (`AT+VIDCHEN=0,1,0,0,0`), select RTSP, then test
 first, and with each of V3-V5 selected alone. Verify VP's parsed `ai_denoise_en`
 and AINR enable/disable logs; use controlled scene comparisons for image quality.
 These procedures have not yet been validated on hardware.
+
+## ISP SRAM comparison
+
+See [ISP_SRAM_TEST.md](ISP_SRAM_TEST.md) for the UART-only H.264 frame/SRAM slice configurations, memory map, build and test procedure.

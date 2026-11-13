@@ -122,7 +122,7 @@ int main(void)
 
 	//rtos_task_t test;
 	//rtos_task_create(&test, "test", test_task, NULL, 512, 1);
-#if defined(CONFIG_WLAN)
+#if defined(CONFIG_WLAN) && !defined(CONFIG_BUILD_ISP_SRAM_TEST)
 	extern void wifi_init(void);
 	wifi_init();
 #endif

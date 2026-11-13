@@ -58,7 +58,7 @@ file(GLOB ISPLIB_SRC CONFIGURE_DEPENDS
 list(
     APPEND ${PROJECT_NAME}_sources
 	# ${hal_sources}
-	./driver/addremap_driver.c  
+	./driver/addremap_runtime.c
 )
 if (CONFIG_VERIFICATION AND NOT CONFIG_VMODULE_VERIFICATION_ISP)
 list(
@@ -290,4 +290,4 @@ target_include_directories(
 
 # include(${CMAKE_SOURCE_DIR}/cmake/updatebsp.cmake)
 # include(${CMAKE_SOURCE_DIR}/cmake/libversion_exec.cmake)
-set_target_properties(${PROJECT_NAME} PROPERTIES ARCHIVE_OUTPUT_DIRECTORY ${vmodule_lib_path})
+set_target_properties(${PROJECT_NAME} PROPERTIES ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})

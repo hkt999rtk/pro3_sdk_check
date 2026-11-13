@@ -35,7 +35,7 @@ __weak void SOCPS_SleepCG(void) {}
 extern void wififw_task_idle(void);
 void vApplicationIdleHook(void)
 {
-#if defined(CONFIG_WIFI_FW_EN) && CONFIG_WIFI_FW_EN && !defined(WIFIFWOFF)
+#if defined(CONFIG_WIFI_FW_EN) && CONFIG_WIFI_FW_EN && !defined(CONFIG_BUILD_ISP_SRAM_TEST) && !defined(WIFIFWOFF)
 	wififw_task_idle();
 #endif
 }
@@ -178,7 +178,7 @@ int main(void)
 	rtos_task_create(&bt_wake_host_task, "bt_wake_host_task", bt_wake_host_task_function, NULL, 512, 1);
 #endif
 
-#if defined(CONFIG_WIFI_FW_EN) && CONFIG_WIFI_FW_EN
+#if defined(CONFIG_WIFI_FW_EN) && CONFIG_WIFI_FW_EN && !defined(CONFIG_BUILD_ISP_SRAM_TEST)
 	wififw_task_create();
 #endif
 

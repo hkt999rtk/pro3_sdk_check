@@ -125,6 +125,7 @@ ameba_list_append(private_includes
 	${c_CMPT_SOC_DIR}/video/nn/app/nn_file_system
 
 	${c_CMPT_SOC_DIR}/video/isp/driver/isplib/common/api
+	${c_CMPT_SOC_DIR}/video/isp/driver/isplib/server/core
 	${c_CMPT_SOC_DIR}/video/isp/hal
 	#${c_CMPT_SOC_DIR}/video/isp/verification
 
@@ -134,6 +135,7 @@ ameba_list_append(private_includes
 	${c_CMPT_SOC_DIR}/video/encoder/hal
 
 	${c_CMPT_SOC_DIR}/video/addremap/hal
+	${c_CMPT_SOC_DIR}/video/addremap/driver
 
 	${c_CMPT_SOC_DIR}/video/ainr/driver
 	${c_CMPT_SOC_DIR}/video/ainr/model

@@ -761,8 +761,10 @@ int enc_open(enc_context_t *enc_ctx)
 		enc_ctx->hevc_preProcCfg.input_alignment = 8;
 		enc_ctx->hevc_preProcCfg.inputType = VCENC_YUV420_SEMIPLANAR;
 		enc_ctx->hevc_preProcCfg.rotation = 0;
-		if (enc_ctx->enc_parm.decompEnable || enc_ctx->enc_parm.lowLatencyEnable) {
+		if (enc_ctx->enc_parm.decompEnable) {
 			enc_ctx->hevc_preProcCfg.origWidth = ENC_ALIGN(enc_ctx->enc_parm.width, 256);  //compression UFBCBlock:256x1
+		} else if (enc_ctx->enc_parm.lowLatencyEnable) {
+			enc_ctx->hevc_preProcCfg.origWidth = ENC_ALIGN(enc_ctx->enc_parm.width, 64);  //match ISP uncompressed RTT stride
 		} else {
 			enc_ctx->hevc_preProcCfg.origWidth = enc_ctx->enc_parm.width;
 		}
@@ -1039,13 +1041,8 @@ static int enc_hevc_encode(enc_context_t *enc_ctx)
 
 	/* decompressor */
 	if (enc_ctx->enc_parm.decompEnable) {
-#if defined(CONFIG_VMODULE_ADDREMAP)
-		extern void get_cmpr_hdr_addr(u32 * y_hdr_addr, u32 * uv_hdr_addr);
-		get_cmpr_hdr_addr(&cmpr_header_y, &cmpr_header_uv);
-#else
 		cmpr_header_y = (unsigned int)enc_ctx->enc_parm.ispDecompLumTable;
 		cmpr_header_uv = (unsigned int)enc_ctx->enc_parm.ispDecompChrTable;
-#endif
 		pEncIn->dec400LumTableBase = cmpr_header_y/*(unsigned int)enc_ctx->enc_parm.ispDecompLumTable*/;
 		pEncIn->dec400CbTableBase =	cmpr_header_uv/*(unsigned int)enc_ctx->enc_parm.ispDecompChrTable*/;
 		pEncIn->dec400CrTableBase =	cmpr_header_uv/* + enc_ctx->dec400ChrTableSize / 2*/;
@@ -1293,13 +1290,8 @@ static int enc_jpeg_encode(enc_context_t *enc_ctx)
 
 	/* decompressor */
 	if (enc_ctx->enc_parm.decompEnable) {
-#if defined(CONFIG_VMODULE_ADDREMAP)
-		extern void get_cmpr_hdr_addr(u32 * y_hdr_addr, u32 * uv_hdr_addr);
-		get_cmpr_hdr_addr(&cmpr_header_y, &cmpr_header_uv);
-#else
 		cmpr_header_y = (unsigned int)enc_ctx->enc_parm.ispDecompLumTable;
 		cmpr_header_uv = (unsigned int)enc_ctx->enc_parm.ispDecompChrTable;
-#endif
 		pEncIn->dec400TableBusLum = cmpr_header_y/*(unsigned int)enc_ctx->enc_parm.ispDecompLumTable*/;
 		pEncIn->dec400TableBusCb =	cmpr_header_uv/*(unsigned int)enc_ctx->enc_parm.ispDecompChrTable*/;
 		pEncIn->dec400TableBusCr =	cmpr_header_uv/* + enc_ctx->dec400ChrTableSize / 2*/;

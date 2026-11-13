@@ -234,6 +234,12 @@ menu "CONFIG VIDEO SOFTWARE"
 		config BUILD_VIDEO_TEST_TOOL
 			bool "Build Video Test Tool"
 			default n
+		config BUILD_ISP_SRAM_TEST
+			bool "UART ISP to H264 frame/SRAM comparison"
+			depends on !4K_DEV && !FAST_CAMERA_START_FOR_AP
+			select BUILD_VIDEO_TEST_TOOL
+			select VMODULE_ADDREMAP
+			default n
 	endif
 	config FAST_CAMERA_START_FOR_AP
 		bool "ENABLE FAST CAMERA START (FCS)"

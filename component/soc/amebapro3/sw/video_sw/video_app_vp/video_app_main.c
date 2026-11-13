@@ -147,7 +147,11 @@ static nn_data_param_t nn_input_params = {
 #endif
 
 #if !defined(CONFIG_4K_DEV) || (CONFIG_4K_DEV != 1)
+#if defined(CONFIG_BUILD_ISP_SRAM_TEST)
+#define SLICE_WRAP_NUM  4
+#else
 #define SLICE_WRAP_NUM  8
+#endif
 
 static isp_remap_param_t isp_remap_v1_param = {
 	.feature_bit = REMAP_COMPRESS,

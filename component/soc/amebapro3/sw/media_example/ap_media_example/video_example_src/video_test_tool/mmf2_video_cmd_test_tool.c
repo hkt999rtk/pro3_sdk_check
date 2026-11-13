@@ -26,7 +26,7 @@
 #include "video_common_type.h"
 #include "os_wrapper.h"
 
-#if defined(CONFIG_LWIP_LAYER) && (CONFIG_LWIP_LAYER != 0)
+#if defined(CONFIG_LWIP_LAYER) && (CONFIG_LWIP_LAYER != 0) && !defined(CONFIG_BUILD_ISP_SRAM_TEST)
 #define VIDEO_TEST_RTSP_ENABLED 1
 #include "module_rtsp2.h"
 #else
@@ -41,7 +41,7 @@
 #define VIDEO_TEST_UVC_ENABLED 0
 #endif
 
-#if defined(CONFIG_WLAN) && (CONFIG_WHC_HOST || CONFIG_WHC_NONE || CONFIG_WHC_DEV_TCPIP_KEEPALIVE)
+#if defined(CONFIG_WLAN) && (CONFIG_WHC_HOST || CONFIG_WHC_NONE || CONFIG_WHC_DEV_TCPIP_KEEPALIVE) && !defined(CONFIG_BUILD_ISP_SRAM_TEST)
 #define VIDEO_TEST_HTTP_ENABLED 1
 #include <httpd/httpd.h>
 #include "lwip_netconf.h"
@@ -121,8 +121,15 @@ static mm_context_t *video_ctx[VIDEO_TEST_CHANNEL_COUNT];
 static mm_context_t *filesaver_ctx[VIDEO_TEST_CHANNEL_COUNT];
 static mm_siso_t *video_filesaver_siso[VIDEO_TEST_CHANNEL_COUNT];
 static uint8_t video_applied[VIDEO_TEST_CHANNEL_COUNT];
+#ifdef CONFIG_BUILD_ISP_SRAM_TEST
+static uint8_t video_channel_enabled[VIDEO_TEST_CHANNEL_COUNT] = {1, 0, 0, 0, 0};
+#else
 static uint8_t video_channel_enabled[VIDEO_TEST_CHANNEL_COUNT] = {1, 1, 1, 1, 1};
+#endif
 static volatile enum video_test_state video_test_state = VIDEO_TEST_STOPPED;
+#ifdef CONFIG_BUILD_ISP_SRAM_TEST
+static int video_comparison_started;
+#endif
 
 /* V2 has one consumer task; preview shares each buffer with statistics/MP4. */
 enum video_preview_mode {
@@ -130,7 +137,11 @@ enum video_preview_mode {
 	VIDEO_PREVIEW_RTSP,
 	VIDEO_PREVIEW_UVC,
 };
+#ifdef CONFIG_BUILD_ISP_SRAM_TEST
+static uint32_t video_ainr_enabled;
+#else
 static uint32_t video_ainr_enabled = 1; /* Global across V1-V5. */
+#endif
 static uint32_t video_nn_enabled;
 static mm_context_t *video_nn_ctx;
 static nn_data_param_t video_nn_input; /* VIPNN retains this pointer until close. */
@@ -166,9 +177,15 @@ static volatile int video_http_stopping;
 static video_params_t video_params[VIDEO_TEST_CHANNEL_COUNT] = {
 	[V1_STREAM_ID] = {
 		.stream_id = V1_STREAM_ID,
+#ifdef CONFIG_BUILD_ISP_SRAM_TEST
+		.format = VIDEO_H264,
+		.width = 1920,
+		.height = 1080,
+#else
 		.format = VIDEO_HEVC,
 		.width = 2688,
 		.height = 1520,
+#endif
 		.fps = 15,
 		.gop = 15,
 		.bps = 2000000,
@@ -987,6 +1004,9 @@ static void video_print_all_params(void)
 
 	RTK_LOGI(TAG, "========================== VIDEO TEST CONFIGURATION ==========================\r\n");
 	RTK_LOGI(TAG, " Test state : %s\r\n", video_test_state_name());
+#ifdef CONFIG_BUILD_ISP_SRAM_TEST
+	RTK_LOGI(TAG, " ISP handoff: %s (AT+VIDPIPE)\r\n", video_params[0].isp_slice_en ? "SRAM SLICE" : "FRAME");
+#endif
 	RTK_LOGI(TAG, " Selected   : %d/%d channels\r\n", video_enabled_channel_count(), VIDEO_TEST_CHANNEL_COUNT);
 	RTK_LOGI(TAG, " AINR       : %s\r\n", video_ainr_enabled ? "ON" : "OFF");
 	RTK_LOGI(TAG, " MP4        : source=%u (0=off,1=V1,2=V2), seconds=%u, ready=%d, http=%d\r\n",
@@ -1391,6 +1411,17 @@ static void video_preview_close(void)
 
 static int video_validate_selected_params(void)
 {
+#ifdef CONFIG_BUILD_ISP_SRAM_TEST
+	if (!video_channel_enabled[0] || video_enabled_channel_count() != 1 ||
+		video_ainr_enabled || video_nn_enabled || video_preview_mode || video_record_source ||
+		video_params[0].format != VIDEO_H264 || video_params[0].width != 1920 ||
+		video_params[0].height != 1080 || video_params[0].fps != 15 || video_params[0].coding.sliceSize) {
+		RTK_LOGE(TAG, "Comparison requires CH0 only, H264 1920x1080@15, AINR/NN/preview/recording/NAL splitting off\r\n");
+		return -1;
+	}
+	RTK_LOGI(TAG, "ISP->H264: %s\r\n", video_params[0].isp_slice_en ?
+		"SRAM slice, 16 lines x 4 slots; Y+UV 184320 bytes" : "frame handoff");
+#endif
 	int channel;
 	int ret = 0;
 
@@ -1619,6 +1650,14 @@ static int mmf2_video_cmd_test(void)
 		RTK_LOGE(TAG, "stop downloads with AT+VIDHTTP=0 before starting a test\r\n");
 		return -1;
 	}
+	/* shortcut: remap restart is not validated; reboot before each comparison run. */
+#ifdef CONFIG_BUILD_ISP_SRAM_TEST
+	if (video_comparison_started) {
+		RTK_LOGE(TAG, "Reboot before another comparison run\r\n");
+		return -1;
+	}
+	video_comparison_started = 1;
+#endif
 	video_test_sink_module = filesaver_module;
 	video_test_sink_module.handle = video_test_sink_handle;
 	if (video_record_prepare() != 0) {
@@ -1757,6 +1796,9 @@ void fVIDHELP(u16 argc, char **argv)
 	RTK_LOGI(TAG, "------------------------------------------------------------------------------\r\n");
 	RTK_LOGI(TAG, "AT+VIDINFO[=<ch0-4|ALL>]\r\n");
 	RTK_LOGI(TAG, "  Show one/all channel settings. Examples: AT+VIDINFO=0, AT+VIDINFO=ALL\r\n");
+#ifdef CONFIG_BUILD_ISP_SRAM_TEST
+	RTK_LOGI(TAG, "AT+VIDPIPE=<0=frame|1=SRAM slice>; reboot between runs; default frame\r\n");
+#endif
 	RTK_LOGI(TAG, "AT+VIDTEST=<0|1>\r\n");
 	RTK_LOGI(TAG, "  Stop/start selected channels. Examples: AT+VIDTEST=1, AT+VIDTEST=0\r\n");
 	RTK_LOGI(TAG, "------------------------------------------------------------------------------\r\n");
@@ -2777,6 +2819,33 @@ void fVIDINFO(u16 argc, char **argv)
 	video_at_finish(error);
 }
 
+#ifdef CONFIG_BUILD_ISP_SRAM_TEST
+void fVIDPIPE(u16 argc, char **argv)
+{
+	uint32_t mode;
+	if (argc == 1) {
+		RTK_LOGI(TAG, "+VIDPIPE:%u,%s\r\n", (unsigned int)video_params[0].isp_slice_en,
+			video_params[0].isp_slice_en ? "SRAM_SLICE" : "FRAME");
+		video_at_finish(VIDEO_AT_OK);
+		return;
+	}
+	if (argc != 2 || video_parse_u32(argv[1], 0, 1, &mode) != 0) {
+		RTK_LOGI(TAG, "usage: AT+VIDPIPE=<0=frame|1=SRAM slice>, before first start in this boot\r\n");
+		video_at_finish(VIDEO_AT_ERR_PARAM);
+		return;
+	}
+	if (video_require_stopped() != 0 || video_comparison_started) {
+		RTK_LOGI(TAG, "Reboot, then select AT+VIDPIPE before starting another run\r\n");
+		video_at_finish(VIDEO_AT_ERR_STATE);
+		return;
+	}
+	video_params[0].isp_slice_en = mode;
+	RTK_LOGI(TAG, "+VIDPIPE:%u,%s (start with AT+VIDTEST=1)\r\n", (unsigned int)mode,
+		mode ? "SRAM_SLICE" : "FRAME");
+	video_at_finish(VIDEO_AT_OK);
+}
+#endif
+
 void fVIDTEST(u16 argc, char **argv)
 {
 	uint32_t enable;
@@ -3220,6 +3289,9 @@ const log_item_t at_video_cmd_test_items[] = {
 	{"+VIDROI", fVIDROI},       /* Set encoder ROI. */
 	{"+VIDXCLR", fVIDXCLR},     /* Clear advanced parameters. */
 	{"+VIDINFO", fVIDINFO},     /* Show one or all channel settings. */
+#ifdef CONFIG_BUILD_ISP_SRAM_TEST
+	{"+VIDPIPE", fVIDPIPE},     /* Select frame/SRAM handoff before the first run. */
+#endif
 	{"+VIDTEST", fVIDTEST},     /* Start/stop the video test. */
 	{"+VIDNN", fVIDNN},         /* Select optional V5 YOLOv4-tiny inference. */
 	{"+VIDOUT", fVIDOUT},       /* Select V2 preview: none, RTSP or UVC. */

@@ -206,6 +206,7 @@ typedef struct video_params_s {
 	uint8_t tier_set;
 	vpap_shared_enc_rc_ext_t rc_ext;           // init-time encoder rate-control extras
 	vpap_shared_enc_coding_t coding;           // init-time bitstream/coding extras
+	uint32_t isp_slice_en;                  // ISP-to-encoder NV12 handoff; unrelated to coding.sliceSize
 } video_params_t;
 
 typedef struct video_qp_range_s {
