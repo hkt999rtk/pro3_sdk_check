@@ -45,7 +45,7 @@ export RTK_TOOLCHAIN_DIR=/Users/kevinhuang/rtk-toolchain
 source ./env.sh
 ```
 
-`env.sh` 會準備／載入 `~/rtk-toolchain/prebuilts-darwin-1.0.3/`，建立並啟用本副本的 `.venv/`，依 `tools/requirements.txt` 安裝 Python 套件。目前只安裝了上面的 ASDK；此副本尚未執行 `env.sh`，prebuilts 與 `.venv` 尚未建立。首次執行需要網路及額外下載。環境準備後使用的工具版本，以當次環境實際輸出為準。
+`env.sh` 會準備／載入 `~/rtk-toolchain/prebuilts-darwin-1.0.3/`，建立並啟用本副本的 `.venv/`，依 `tools/requirements.txt` 安裝 Python 套件。已執行 `env.sh`，prebuilts 與 `.venv` 均已建立，Python 套件檢查通過。首次在新副本執行仍需要網路及額外下載。環境準備後使用的工具版本，以當次環境實際輸出為準。
 
 選擇晶片並 build：
 
@@ -68,5 +68,40 @@ python ameba.py menuconfig
 - `arm-none-eabi-gcc --version` 回報 Realtek ASDK-12.3.1 Build 4600。
 - `arm-none-eabi-gcc -check-license` 回報 `License file is found.`。
 - Cortex-M33 與 Cortex-A32 的最小 C 原始碼均可交叉編譯成 ARM ELF32 object。
-- **尚未執行完整 SDK configure／compile／link／image packaging，也未上板測試。** 工具鏈可執行不等於完整 SDK 已 build 通過。
-- 尚未實作前述 H.264／2160 寬／16-line slice 全 SRAM 修改；此副本保留原 SDK 行為。
+- **已完成預設 RTL8735C 韌體的 configure／compile／link／image packaging，build exit code 為 0；尚未燒錄或上板測試。** macOS 所需的原生 `fiptool` 處理方式見下方。
+- 已加入 H.264 1920×1080@15 的 UART frame／SRAM slice 比較韌體，可用 `AT+VIDPIPE` 選模式；2160 寬尚未提供測試組態。建置與限制見 [ISP_SRAM_TEST.md](component/soc/amebapro3/sw/media_example/ap_media_example/video_example_src/video_test_tool/ISP_SRAM_TEST.md)。
+
+
+## 2026-11-13 完整 Build 結果與 macOS fiptool
+
+實際 build 使用 Python 3.14.6、SDK prebuilts CMake 4.3.2、Ninja 1.13.2，以及上述 Realtek ASDK。`python -m pip check` 通過。
+
+SDK 內建 `component/soc/amebapro3/atf/tools/fiptool/fiptool` 是 Linux x86-64 ELF，無法在此 Mac 執行，首次 build 因此在 AP FIP 打包階段失敗。使用 SDK 原始碼與本機已安裝的 Apple Clang、OpenSSL 3 建立 macOS arm64 版本；不替換 SDK 內的原始執行檔：
+
+```bash
+# 在 repository root 執行；先依前文 source ./env.sh。
+mkdir -p build_RTL8735C/native-tools
+cc -D_GNU_SOURCE -D_XOPEN_SOURCE=700 -Wall -Werror -pedantic -std=c99 -O2 \
+  -Icomponent/soc/amebapro3/atf/include/tools_share \
+  -I/opt/homebrew/opt/openssl@3/include \
+  component/soc/amebapro3/atf/tools/fiptool/fiptool.c \
+  component/soc/amebapro3/atf/tools/fiptool/tbbr_config.c \
+  -L/opt/homebrew/opt/openssl@3/lib -lcrypto \
+  -o build_RTL8735C/native-tools/fiptool
+export FIPTOOL="$PWD/build_RTL8735C/native-tools/fiptool"
+python ameba.py build
+```
+
+原生 `fiptool` 已通過 create／unpack 資料一致性檢查；生成的 FIP 可讀取 BL2、BL32、BL33 三個項目。後續在新的 shell build 時，仍需先設定上述 `FIPTOOL` 環境變數。
+
+以下為首次預設組態建置的產物紀錄，原位置為 `build_RTL8735C/`，可能已被後續建置覆寫。最新 UART 比較韌體與驗證紀錄另外保存在 `build_RTL8735C/isp_uart/`：
+
+- `amebapro3_boot.bin`：39,168 bytes。
+- `amebapro3_app.bin`：2,348,608 bytes。
+- `ota_all.bin`：2,348,640 bytes。
+- `SHA256SUMS`：本次三個映像的 SHA-256。
+- `setup.log`、`build-first-attempt.log`、`build.log`：環境安裝、首次失敗及成功 build 紀錄。
+
+Linker 仍有 newlib syscall 未實作警告（包含 `_gettimeofday`）；build 成功不代表這些執行期功能已驗證。此次使用 SDK 預設組態，包含 128 MB DDR 設定，未驗證與實際板子的相容性。
+
+Build 自動改寫的四個 `build_info.h` 與五個預建 library 已備份至 `build_RTL8735C/generated-source-backup/`，並還原成 Git baseline，避免將 build 副作用混入原始碼修改。Python editable install metadata 以本機 `.git/info/exclude` 排除。
