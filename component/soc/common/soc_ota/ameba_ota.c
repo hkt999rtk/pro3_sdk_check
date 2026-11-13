@@ -1,0 +1,126 @@
+/*
+ * Copyright (c) 2024 Realtek Semiconductor Corp.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include "ameba_soc.h"
+#include "ameba_ota.h"
+
+u32 IMG_ADDR[OTA_IMGID_MAX][2] = {0}; /* IMG Flash Physical Address use for OTA */
+
+/**
+  * @brief  get current image2 location
+  * @param  image index
+  * @retval  The retval can be one of the followings:
+  *              OTA_INDEX_1: current images located in OTA1 address space
+  *              OTA_INDEX_2: current images located in OTA2 address space
+  */
+u8 ota_get_cur_index(u8 img_id)
+{
+	u32 PhyAddr;
+	u32 AddrStart;
+
+#if defined(CONFIG_AMEBASMART)
+	if (img_id == OTA_IMGID_BOOT) {
+		// Compatiable Nand and Nor Flash
+		u32 BootInfo = BKUP_Read(BKUP_REG0);
+		u32 BootVer = (BootInfo & BKUP_BIT_BOOT_VER_NUM) >> 30;
+		return BootVer;
+	} else {
+		AddrStart = RRAM->OTA_APP_REMAP;
+	}
+#elif (defined(CONFIG_RTL8720F) || defined(CONFIG_RLE1509))
+#ifdef CONFIG_IOT_MCU_COMBINED
+	/* SOLO: the km4tz bootloader records the running OTA slots in GBSS retention RAM
+	 * (OTA_NP_IMG_IDX for iot/km4ns, OTA_IMG_REMAP[] for mcu/AP) and km4ns reads them
+	 * here. app_mpu_nocache_init() maps GBSS non-cacheable in this app, so the read
+	 * comes straight from SRAM and needs no cache maintenance. The cross-core coherency
+	 * is handled entirely on the writer side: the bootloader runs with the MPU disabled
+	 * (GBSS cacheable there) so it DCache_Clean()s GBSS after each write. */
+	if (img_id == OTA_IMGID_NP) {
+		return GBSS_DEV->OTA_NP_IMG_IDX;
+	}
+#endif
+	AddrStart = GBSS_DEV->OTA_IMG_REMAP[img_id];
+#elif defined(CONFIG_AMEBAPRO3)
+	{
+		(void)AddrStart;
+
+		if (img_id == OTA_IMGID_BOOT) {
+			/* The NP ROM bootloader records the selected bootloader slot in
+			 * AON_WDT_TIMER[5:1] via PLATFORM_BOOTLMT_Write() before handing
+			 * off.  BOOTLMT_BIT_BOOT_VER_NUM (BIT3 of BKUPR_REG0) set
+			 * means OTA2 is active; clear means OTA1. */
+			return (BKUPR_Read(BKUPR_REG0) & BOOTLMT_BIT_BOOT_VER_NUM) ? OTA_INDEX_2 : OTA_INDEX_1;
+		} else {
+			/* APP slot: BKUP_REG0[17] set = OTA2, clear = OTA1 */
+			return (BKUP_Read(BKUP_REG0) & BKUP_BIT_FW_OTA_INDEX) ? OTA_INDEX_2 : OTA_INDEX_1;
+		}
+	}
+#else
+	AddrStart = RRAM_DEV->OTA_IMG_REMAP[img_id];
+#endif
+
+#if defined(CONFIG_AMEBASMART)
+	if (IMG_ADDR[OTA_IMGID_APP][OTA_INDEX_1] == 0)
+#else
+	if (IMG_ADDR[img_id][OTA_INDEX_1] == 0)
+#endif
+	{
+		flash_get_layout_info(IMG_BOOT, &IMG_ADDR[OTA_IMGID_BOOT][OTA_INDEX_1], NULL);
+		flash_get_layout_info(IMG_BOOT_OTA2, &IMG_ADDR[OTA_IMGID_BOOT][OTA_INDEX_2], NULL);
+		flash_get_layout_info(IMG_APP_OTA1, &IMG_ADDR[OTA_IMGID_APP][OTA_INDEX_1], NULL);
+		flash_get_layout_info(IMG_APP_OTA2, &IMG_ADDR[OTA_IMGID_APP][OTA_INDEX_2], NULL);
+
+#if defined(CONFIG_AMEBALITE)
+		flash_get_layout_info(IMG_DSP, &IMG_ADDR[OTA_IMGID_DSP][OTA_INDEX_1], NULL);
+		flash_get_layout_info(IMG_DSP, &IMG_ADDR[OTA_IMGID_DSP][OTA_INDEX_2], NULL);
+#endif
+	}
+
+	if (AddrStart & RSIP_BIT_REMAP_x_ENABLE) {
+		PhyAddr = (AddrStart >> 9) << 5;
+
+		if (img_id == OTA_IMGID_APP) {
+			/*add certificate and manifest*/
+			PhyAddr = PhyAddr - 0x2000;
+		} else {
+			/*add manifest*/
+			PhyAddr = PhyAddr - 0x1000;
+		}
+
+		if (PhyAddr == IMG_ADDR[img_id][OTA_INDEX_1]) {
+			return OTA_INDEX_1;
+		} else {
+			return OTA_INDEX_2;
+		}
+	}
+
+	return OTA_INDEX_1;
+}
+
+/**
+  * @brief  check if bootloader OTA2 address is valid
+  * @param  none
+  * The retval can be one of the followings:
+  *              0: OTA2 address is valid
+  *              1: OTA2 address is invalid
+  */
+u8 ota_check_bootloader_ota2(void)
+{
+	u16 tmp;
+	u32 ImgAddr;
+
+	tmp = HAL_READ16(OTPC_REG_BASE, SEC_OTA_ADDR);
+
+	/* Take default OTP value as invalid address */
+	if (tmp != 0xFFFF) {
+		ImgAddr = tmp << 12;
+	} else {
+		ImgAddr = 0;
+	}
+
+	/* check if OTA2 addr is valid. The OTA2 addr in OTP should be a multiples of 4KB. */
+	return ((ImgAddr == IMG_ADDR[OTA_IMGID_BOOT][OTA_INDEX_2]) ? 0 : 1);
+}

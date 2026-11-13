@@ -1,0 +1,3 @@
+config BUILD_AUDIO_TEST_TOOL
+    bool "Build Audio Test Tool"
+    default n

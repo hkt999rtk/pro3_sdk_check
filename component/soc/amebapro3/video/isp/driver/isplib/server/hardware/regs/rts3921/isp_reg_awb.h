@@ -1,0 +1,728 @@
+
+//tool_version:1.4.35
+
+#ifndef _AWB_H_INC_
+#define _AWB_H_INC_
+
+#include <isp_reg.h>
+#include <isp_reg_base.h>
+
+#define AWB_STATIS_CTRL (AWB_BASE_ADDR + 0x00000000) //0x00006800
+#define AWB_GAIN_CTRL (AWB_BASE_ADDR + 0x00000004) //0x00006804
+#define AWB_GAIN_RED (AWB_BASE_ADDR + 0x00000008) //0x00006808
+#define AWB_GAIN_GREEN (AWB_BASE_ADDR + 0x0000000c) //0x0000680c
+#define AWB_GAIN_BLUE (AWB_BASE_ADDR + 0x00000010) //0x00006810
+#define AWB_GAIN_STEP (AWB_BASE_ADDR + 0x00000014) //0x00006814
+#define AWB_GAIN_R_NOW (AWB_BASE_ADDR + 0x00000018) //0x00006818
+#define AWB_GAIN_G_NOW (AWB_BASE_ADDR + 0x0000001c) //0x0000681c
+#define AWB_GAIN_B_NOW (AWB_BASE_ADDR + 0x00000020) //0x00006820
+#define AWB_GAIN_OVEREXP_WR (AWB_BASE_ADDR + 0x00000024) //0x00006824
+#define AWB_GAIN_OVEREXP_WG (AWB_BASE_ADDR + 0x00000028) //0x00006828
+#define AWB_GAIN_OVEREXP_WB (AWB_BASE_ADDR + 0x0000002c) //0x0000682c
+#define AWB_GAIN_OVEREXP_RATIO (AWB_BASE_ADDR + 0x00000030) //0x00006830
+#define AWB_GAIN_OVEREXP_THD (AWB_BASE_ADDR + 0x00000034) //0x00006834
+#define AWB_FINE_TUNE_GAIN (AWB_BASE_ADDR + 0x00000038) //0x00006838
+#define AWB_WIN_START (AWB_BASE_ADDR + 0x0000003c) //0x0000683c
+#define AWB_WIN_SIZE (AWB_BASE_ADDR + 0x00000040) //0x00006840
+#define AWB_BRIGHT_COEF (AWB_BASE_ADDR + 0x00000044) //0x00006844
+#define AWB_WIN_LIMIT_ENABLE (AWB_BASE_ADDR + 0x00000048) //0x00006848
+#define AWB_WIN_MIN_BRIGHT_THD (AWB_BASE_ADDR + 0x0000004c) //0x0000684c
+#define AWB_WIN_MAX_BRIGHT_THD (AWB_BASE_ADDR + 0x00000050) //0x00006850
+#define AWB_WIN_MIN_R_THD (AWB_BASE_ADDR + 0x00000054) //0x00006854
+#define AWB_WIN_MAX_R_THD (AWB_BASE_ADDR + 0x00000058) //0x00006858
+#define AWB_WIN_MIN_G_THD (AWB_BASE_ADDR + 0x0000005c) //0x0000685c
+#define AWB_WIN_MAX_G_THD (AWB_BASE_ADDR + 0x00000060) //0x00006860
+#define AWB_WIN_MIN_B_THD (AWB_BASE_ADDR + 0x00000064) //0x00006864
+#define AWB_WIN_MAX_B_THD (AWB_BASE_ADDR + 0x00000068) //0x00006868
+#define AWB_WIN_RG_THD (AWB_BASE_ADDR + 0x0000006c) //0x0000686c
+#define AWB_WIN_BG_THD (AWB_BASE_ADDR + 0x00000070) //0x00006870
+#define AWB_RGBC_K1 (AWB_BASE_ADDR + 0x00000074) //0x00006874
+#define AWB_RGBC_K2 (AWB_BASE_ADDR + 0x00000078) //0x00006878
+#define AWB_RGBC_C1 (AWB_BASE_ADDR + 0x0000007c) //0x0000687c
+#define AWB_FINE_RG_THD (AWB_BASE_ADDR + 0x00000080) //0x00006880
+#define AWB_FINE_BG_THD (AWB_BASE_ADDR + 0x00000084) //0x00006884
+#define AWB_FINE_MIN_BRIGHT_THD (AWB_BASE_ADDR + 0x00000088) //0x00006888
+#define AWB_FINE_MAX_BRIGHT_THD (AWB_BASE_ADDR + 0x0000008c) //0x0000688c
+#define AWB_FINE_WP_NUM (AWB_BASE_ADDR + 0x00000090) //0x00006890
+#define AWB_FINE_SUM_R (AWB_BASE_ADDR + 0x00000094) //0x00006894
+#define AWB_FINE_SUM_G (AWB_BASE_ADDR + 0x00000098) //0x00006898
+#define AWB_FINE_SUM_B (AWB_BASE_ADDR + 0x0000009c) //0x0000689c
+#define AWB_FINE_DIV (AWB_BASE_ADDR + 0x000000a0) //0x000068a0
+#define AWB_ROUGH_RG_THD (AWB_BASE_ADDR + 0x000000a4) //0x000068a4
+#define AWB_ROUGH_BG_THD (AWB_BASE_ADDR + 0x000000a8) //0x000068a8
+#define AWB_ROUGH_BRIGHT_MIN_THD (AWB_BASE_ADDR + 0x000000ac) //0x000068ac
+#define AWB_ROUGH_BRIGHT_MAX_THD (AWB_BASE_ADDR + 0x000000b0) //0x000068b0
+#define AWB_ROUGH_GAIN_R_1_2 (AWB_BASE_ADDR + 0x000000b4) //0x000068b4
+#define AWB_ROUGH_GAIN_R_1_4 (AWB_BASE_ADDR + 0x000000b8) //0x000068b8
+#define AWB_ROUGH_GAIN_R_5_6 (AWB_BASE_ADDR + 0x000000bc) //0x000068bc
+#define AWB_ROUGH_GAIN_B_1_2 (AWB_BASE_ADDR + 0x000000c0) //0x000068c0
+#define AWB_ROUGH_GAIN_B_3_4 (AWB_BASE_ADDR + 0x000000c4) //0x000068c4
+#define AWB_ROUGH_GAIN_B_5_6 (AWB_BASE_ADDR + 0x000000c8) //0x000068c8
+#define AWB_WP_NUM1 (AWB_BASE_ADDR + 0x000000cc) //0x000068cc
+#define AWB_WP_NUM2 (AWB_BASE_ADDR + 0x000000d0) //0x000068d0
+#define AWB_WP_NUM3 (AWB_BASE_ADDR + 0x000000d4) //0x000068d4
+#define AWB_WP_NUM4 (AWB_BASE_ADDR + 0x000000d8) //0x000068d8
+#define AWB_WP_NUM5 (AWB_BASE_ADDR + 0x000000dc) //0x000068dc
+#define AWB_WP_NUM6 (AWB_BASE_ADDR + 0x000000e0) //0x000068e0
+#define AWB_WIN_STATIS_ADDR (AWB_BASE_ADDR + 0x000000e4) //0x000068e4
+#define AWB_WIN_STATIS_PIXEL_NUM (AWB_BASE_ADDR + 0x000000e8) //0x000068e8
+#define AWB_WIN_BG_RG_MEAN_DIV (AWB_BASE_ADDR + 0x000000ec) //0x000068ec
+#define AWB_WIN_MEAN0 (AWB_BASE_ADDR + 0x000000f0) //0x000068f0
+#define AWB_WIN_MEAN1 (AWB_BASE_ADDR + 0x000000f4) //0x000068f4
+#define AWB_WIN_R_SUM (AWB_BASE_ADDR + 0x000000f8) //0x000068f8
+#define AWB_WIN_G_SUM (AWB_BASE_ADDR + 0x000000fc) //0x000068fc
+#define AWB_WIN_B_SUM (AWB_BASE_ADDR + 0x00000100) //0x00006900
+#define AWB_OVER_EN (AWB_BASE_ADDR + 0x00000104) //0x00006904
+#define AWB_AWB_STEP_R_SYNC (AWB_BASE_ADDR + 0x00000114) //0x00006914
+#define AWB_AWB_STEP_G_SYNC (AWB_BASE_ADDR + 0x00000118) //0x00006918
+#define AWB_AWB_STEP_B_SYNC (AWB_BASE_ADDR + 0x00000120) //0x00006920
+#define AWB_AWB_GAIN_MODE_SYNC (AWB_BASE_ADDR + 0x00000124) //0x00006924
+#define AWB_OVEREXP_WR_SYNC (AWB_BASE_ADDR + 0x0000012c) //0x0000692c
+#define AWB_OVEREXP_WG_SYNC (AWB_BASE_ADDR + 0x00000130) //0x00006930
+#define AWB_OVEREXP_WB_SYNC (AWB_BASE_ADDR + 0x00000134) //0x00006934
+#define AWB_OVEREXP_THD_SYNC (AWB_BASE_ADDR + 0x00000138) //0x00006938
+#define AWB_OVEREXP_RATIO_SYNC (AWB_BASE_ADDR + 0x0000013c) //0x0000693c
+#define AWB_OVEREXP_EN_MODE_SYNC (AWB_BASE_ADDR + 0x00000140) //0x00006940
+#define AWB_REG_LOAD (AWB_BASE_ADDR + 0x00000144) //0x00006944
+#define AWB_OVER_EN_SYNC (AWB_BASE_ADDR + 0x00000148) //0x00006948
+#define AWB_OVEREXP_DEBUG_MODE (AWB_BASE_ADDR + 0x0000014c) //0x0000694c
+
+/* Bits of AWB_STATIS_CTRL (0x00000000) */
+
+#define CSYS_MODE_OFFSET 0
+#define CSYS_MODE_BITS 1
+#define CSYS_MODE_MASK (((1 << 1) - 1) << 0)
+
+#define STATS_MODE_OFFSET 1
+#define STATS_MODE_BITS 1
+#define STATS_MODE_MASK (((1 << 1) - 1) << 1)
+
+#define FINE_EN_OFFSET 2
+#define FINE_EN_BITS 1
+#define FINE_EN_MASK (((1 << 1) - 1) << 2)
+
+#define ROUGH_EN_OFFSET 3
+#define ROUGH_EN_BITS 1
+#define ROUGH_EN_MASK (((1 << 1) - 1) << 3)
+
+#define STATS_NUM_MODE_OFFSET 4
+#define STATS_NUM_MODE_BITS 1
+#define STATS_NUM_MODE_MASK (((1 << 1) - 1) << 4)
+
+#define AWB_STOP_OFFSET 5
+#define AWB_STOP_BITS 1
+#define AWB_STOP_MASK (((1 << 1) - 1) << 5)
+
+#define AWB_START_OFFSET 6
+#define AWB_START_BITS 1
+#define AWB_START_MASK (((1 << 1) - 1) << 6)
+
+#define AWB_MODE_OFFSET 8
+#define AWB_MODE_BITS 2
+#define AWB_MODE_MASK (((1 << 2) - 1) << 8)
+
+/* Bits of AWB_GAIN_CTRL (0x00000004) */
+
+#define AWB_GAIN_MODE_OFFSET 0
+#define AWB_GAIN_MODE_BITS 1
+#define AWB_GAIN_MODE_MASK (((1 << 1) - 1) << 0)
+
+#define AWB_GAIN_STOP_OFFSET 1
+#define AWB_GAIN_STOP_BITS 1
+#define AWB_GAIN_STOP_MASK (((1 << 1) - 1) << 1)
+
+#define AWB_GAIN_TRIG_OFFSET 2
+#define AWB_GAIN_TRIG_BITS 1
+#define AWB_GAIN_TRIG_MASK (((1 << 1) - 1) << 2)
+
+#define AWB_GAIN_GOING_OFFSET 3
+#define AWB_GAIN_GOING_BITS 1
+#define AWB_GAIN_GOING_MASK (((1 << 1) - 1) << 3)
+
+#define OVEREXP_EN_MODE_OFFSET 4
+#define OVEREXP_EN_MODE_BITS 1
+#define OVEREXP_EN_MODE_MASK (((1 << 1) - 1) << 4)
+
+/* Bits of AWB_GAIN_RED (0x00000008) */
+
+#define AWB_GAIN_R_OFFSET 0
+#define AWB_GAIN_R_BITS 12
+#define AWB_GAIN_R_MASK (((1 << 12) - 1) << 0)
+
+/* Bits of AWB_GAIN_GREEN (0x0000000c) */
+
+#define AWB_GAIN_G_OFFSET 0
+#define AWB_GAIN_G_BITS 12
+#define AWB_GAIN_G_MASK (((1 << 12) - 1) << 0)
+
+/* Bits of AWB_GAIN_BLUE (0x00000010) */
+
+#define AWB_GAIN_B_OFFSET 0
+#define AWB_GAIN_B_BITS 12
+#define AWB_GAIN_B_MASK (((1 << 12) - 1) << 0)
+
+/* Bits of AWB_GAIN_STEP (0x00000014) */
+
+#define AWB_STEP_R_OFFSET 0
+#define AWB_STEP_R_BITS 8
+#define AWB_STEP_R_MASK (((1 << 8) - 1) << 0)
+
+#define AWB_STEP_G_OFFSET 8
+#define AWB_STEP_G_BITS 8
+#define AWB_STEP_G_MASK (((1 << 8) - 1) << 8)
+
+#define AWB_STEP_B_OFFSET 16
+#define AWB_STEP_B_BITS 8
+#define AWB_STEP_B_MASK (((1 << 8) - 1) << 16)
+
+/* Bits of AWB_GAIN_R_NOW (0x00000018) */
+
+#define GAIN_OFFSET 0
+#define GAIN_BITS 12
+#define GAIN_MASK (((1 << 12) - 1) << 0)
+
+/* Bits of AWB_GAIN_G_NOW (0x0000001c) */
+
+#define GB_GAIN_OFFSET 0
+#define GB_GAIN_BITS 12
+#define GB_GAIN_MASK (((1 << 12) - 1) << 0)
+
+/* Bits of AWB_GAIN_B_NOW (0x00000020) */
+
+#define B_GAIN_OFFSET 0
+#define B_GAIN_BITS 12
+#define B_GAIN_MASK (((1 << 12) - 1) << 0)
+
+/* Bits of AWB_GAIN_OVEREXP_WR (0x00000024) */
+
+#define OVEREXP_WR_OFFSET 0
+#define OVEREXP_WR_BITS 7
+#define OVEREXP_WR_MASK (((1 << 7) - 1) << 0)
+
+/* Bits of AWB_GAIN_OVEREXP_WG (0x00000028) */
+
+#define OVEREXP_WG_OFFSET 0
+#define OVEREXP_WG_BITS 7
+#define OVEREXP_WG_MASK (((1 << 7) - 1) << 0)
+
+/* Bits of AWB_GAIN_OVEREXP_WB (0x0000002c) */
+
+#define OVEREXP_WB_OFFSET 0
+#define OVEREXP_WB_BITS 7
+#define OVEREXP_WB_MASK (((1 << 7) - 1) << 0)
+
+/* Bits of AWB_GAIN_OVEREXP_RATIO (0x00000030) */
+
+#define OVEREXP_RATIO_OFFSET 0
+#define OVEREXP_RATIO_BITS 12
+#define OVEREXP_RATIO_MASK (((1 << 12) - 1) << 0)
+
+/* Bits of AWB_GAIN_OVEREXP_THD (0x00000034) */
+
+#define OVEREXP_THD_OFFSET 0
+#define OVEREXP_THD_BITS 21
+#define OVEREXP_THD_MASK (((1 << 21) - 1) << 0)
+
+/* Bits of AWB_FINE_TUNE_GAIN (0x00000038) */
+
+#define GAIN_R_FINE_OFFSET 0
+#define GAIN_R_FINE_BITS 11
+#define GAIN_R_FINE_MASK (((1 << 11) - 1) << 0)
+
+#define GAIN_B_FINE_OFFSET 16
+#define GAIN_B_FINE_BITS 11
+#define GAIN_B_FINE_MASK (((1 << 11) - 1) << 16)
+
+/* Bits of AWB_WIN_START (0x0000003c) */
+
+#define AWB_START_X_OFFSET 0
+#define AWB_START_X_BITS 16
+#define AWB_START_X_MASK (((1 << 16) - 1) << 0)
+
+#define AWB_START_Y_OFFSET 16
+#define AWB_START_Y_BITS 16
+#define AWB_START_Y_MASK (((1 << 16) - 1) << 16)
+
+/* Bits of AWB_WIN_SIZE (0x00000040) */
+
+#define WIN_WIDTH_OFFSET 0
+#define WIN_WIDTH_BITS 8
+#define WIN_WIDTH_MASK (((1 << 8) - 1) << 0)
+
+#define WIN_HEIGHT_OFFSET 8
+#define WIN_HEIGHT_BITS 8
+#define WIN_HEIGHT_MASK (((1 << 8) - 1) << 8)
+
+#define WIN_NUM_H_OFFSET 16
+#define WIN_NUM_H_BITS 5
+#define WIN_NUM_H_MASK (((1 << 5) - 1) << 16)
+
+#define WIN_NUM_V_OFFSET 24
+#define WIN_NUM_V_BITS 5
+#define WIN_NUM_V_MASK (((1 << 5) - 1) << 24)
+
+/* Bits of AWB_BRIGHT_COEF (0x00000044) */
+
+#define COEF_BRIGHT_R_OFFSET 0
+#define COEF_BRIGHT_R_BITS 4
+#define COEF_BRIGHT_R_MASK (((1 << 4) - 1) << 0)
+
+#define COEF_BRIGHT_G_OFFSET 4
+#define COEF_BRIGHT_G_BITS 4
+#define COEF_BRIGHT_G_MASK (((1 << 4) - 1) << 4)
+
+#define COEF_BRIGHT_B_OFFSET 8
+#define COEF_BRIGHT_B_BITS 4
+#define COEF_BRIGHT_B_MASK (((1 << 4) - 1) << 8)
+
+#define COEF_GR_OFFSET 24
+#define COEF_GR_BITS 2
+#define COEF_GR_MASK (((1 << 2) - 1) << 24)
+
+#define COEF_GB_OFFSET 28
+#define COEF_GB_BITS 2
+#define COEF_GB_MASK (((1 << 2) - 1) << 28)
+
+/* Bits of AWB_WIN_LIMIT_ENABLE (0x00000048) */
+
+#define WIN_RANGE_EN_OFFSET 0
+#define WIN_RANGE_EN_BITS 1
+#define WIN_RANGE_EN_MASK (((1 << 1) - 1) << 0)
+
+#define WIN_RATIO_EN_OFFSET 1
+#define WIN_RATIO_EN_BITS 1
+#define WIN_RATIO_EN_MASK (((1 << 1) - 1) << 1)
+
+#define WIN_BGRG_EN_OFFSET 2
+#define WIN_BGRG_EN_BITS 1
+#define WIN_BGRG_EN_MASK (((1 << 1) - 1) << 2)
+
+/* Bits of AWB_WIN_MIN_BRIGHT_THD (0x0000004c) */
+
+#define MIN_BRIGHT_WIN_OFFSET 0
+#define MIN_BRIGHT_WIN_BITS 19
+#define MIN_BRIGHT_WIN_MASK (((1 << 19) - 1) << 0)
+
+/* Bits of AWB_WIN_MAX_BRIGHT_THD (0x00000050) */
+
+#define MAX_BRIGHT_WIN_OFFSET 0
+#define MAX_BRIGHT_WIN_BITS 19
+#define MAX_BRIGHT_WIN_MASK (((1 << 19) - 1) << 0)
+
+/* Bits of AWB_WIN_MIN_R_THD (0x00000054) */
+
+#define MIN_R_WIN_OFFSET 0
+#define MIN_R_WIN_BITS 19
+#define MIN_R_WIN_MASK (((1 << 19) - 1) << 0)
+
+/* Bits of AWB_WIN_MAX_R_THD (0x00000058) */
+
+#define MAX_R_WIN_OFFSET 0
+#define MAX_R_WIN_BITS 19
+#define MAX_R_WIN_MASK (((1 << 19) - 1) << 0)
+
+/* Bits of AWB_WIN_MIN_G_THD (0x0000005c) */
+
+#define MIN_G_WIN_OFFSET 0
+#define MIN_G_WIN_BITS 19
+#define MIN_G_WIN_MASK (((1 << 19) - 1) << 0)
+
+/* Bits of AWB_WIN_MAX_G_THD (0x00000060) */
+
+#define MAX_G_WIN_OFFSET 0
+#define MAX_G_WIN_BITS 19
+#define MAX_G_WIN_MASK (((1 << 19) - 1) << 0)
+
+/* Bits of AWB_WIN_MIN_B_THD (0x00000064) */
+
+#define MIN_B_WIN_OFFSET 0
+#define MIN_B_WIN_BITS 19
+#define MIN_B_WIN_MASK (((1 << 19) - 1) << 0)
+
+/* Bits of AWB_WIN_MAX_B_THD (0x00000068) */
+
+#define MAX_B_WIN_OFFSET 0
+#define MAX_B_WIN_BITS 19
+#define MAX_B_WIN_MASK (((1 << 19) - 1) << 0)
+
+/* Bits of AWB_WIN_RG_THD (0x0000006c) */
+
+#define MAX_R_G_WIN_OFFSET 0
+#define MAX_R_G_WIN_BITS 11
+#define MAX_R_G_WIN_MASK (((1 << 11) - 1) << 0)
+
+#define MIN_R_G_WIN_OFFSET 16
+#define MIN_R_G_WIN_BITS 11
+#define MIN_R_G_WIN_MASK (((1 << 11) - 1) << 16)
+
+/* Bits of AWB_WIN_BG_THD (0x00000070) */
+
+#define MAX_B_G_WIN_OFFSET 0
+#define MAX_B_G_WIN_BITS 11
+#define MAX_B_G_WIN_MASK (((1 << 11) - 1) << 0)
+
+#define MIN_B_G_WIN_OFFSET 16
+#define MIN_B_G_WIN_BITS 11
+#define MIN_B_G_WIN_MASK (((1 << 11) - 1) << 16)
+
+/* Bits of AWB_RGBC_K1 (0x00000074) */
+
+#define WIN_K1_OFFSET 0
+#define WIN_K1_BITS 11
+#define WIN_K1_MASK (((1 << 11) - 1) << 0)
+
+/* Bits of AWB_RGBC_K2 (0x00000078) */
+
+#define WIN_K2_OFFSET 0
+#define WIN_K2_BITS 11
+#define WIN_K2_MASK (((1 << 11) - 1) << 0)
+
+/* Bits of AWB_RGBC_C1 (0x0000007c) */
+
+#define WIN_C1_OFFSET 0
+#define WIN_C1_BITS 16
+#define WIN_C1_MASK (((1 << 16) - 1) << 0)
+
+#define WIN_C2_OFFSET 16
+#define WIN_C2_BITS 16
+#define WIN_C2_MASK (((1 << 16) - 1) << 16)
+
+/* Bits of AWB_FINE_RG_THD (0x00000080) */
+
+#define MAX_R_G_FINE_OFFSET 0
+#define MAX_R_G_FINE_BITS 11
+#define MAX_R_G_FINE_MASK (((1 << 11) - 1) << 0)
+
+#define MIN_R_G_FINE_OFFSET 16
+#define MIN_R_G_FINE_BITS 11
+#define MIN_R_G_FINE_MASK (((1 << 11) - 1) << 16)
+
+/* Bits of AWB_FINE_BG_THD (0x00000084) */
+
+#define MAX_B_G_FINE_OFFSET 0
+#define MAX_B_G_FINE_BITS 11
+#define MAX_B_G_FINE_MASK (((1 << 11) - 1) << 0)
+
+#define MIN_B_G_FINE_OFFSET 16
+#define MIN_B_G_FINE_BITS 11
+#define MIN_B_G_FINE_MASK (((1 << 11) - 1) << 16)
+
+/* Bits of AWB_FINE_MIN_BRIGHT_THD (0x00000088) */
+
+#define MIN_BRIGHT_FINE_OFFSET 0
+#define MIN_BRIGHT_FINE_BITS 19
+#define MIN_BRIGHT_FINE_MASK (((1 << 19) - 1) << 0)
+
+/* Bits of AWB_FINE_MAX_BRIGHT_THD (0x0000008c) */
+
+#define MAX_BRIGHT_FINE_OFFSET 0
+#define MAX_BRIGHT_FINE_BITS 19
+#define MAX_BRIGHT_FINE_MASK (((1 << 19) - 1) << 0)
+
+/* Bits of AWB_FINE_WP_NUM (0x00000090) */
+
+#define WP_NUM_FINE_OFFSET 0
+#define WP_NUM_FINE_BITS 22
+#define WP_NUM_FINE_MASK (((1 << 22) - 1) << 0)
+
+/* Bits of AWB_FINE_SUM_R (0x00000094) */
+
+#define SUM_R_WP_FINE_OFFSET 0
+#define SUM_R_WP_FINE_BITS 32
+#define SUM_R_WP_FINE_MASK (((1 << 32) - 1) << 0)
+
+/* Bits of AWB_FINE_SUM_G (0x00000098) */
+
+#define SUM_G_WP_FINE_OFFSET 0
+#define SUM_G_WP_FINE_BITS 32
+#define SUM_G_WP_FINE_MASK (((1 << 32) - 1) << 0)
+
+/* Bits of AWB_FINE_SUM_B (0x0000009c) */
+
+#define SUM_B_WP_FINE_OFFSET 0
+#define SUM_B_WP_FINE_BITS 32
+#define SUM_B_WP_FINE_MASK (((1 << 32) - 1) << 0)
+
+/* Bits of AWB_FINE_DIV (0x000000a0) */
+
+#define GAIN_FINE1_OFFSET 0
+#define GAIN_FINE1_BITS 16
+#define GAIN_FINE1_MASK (((1 << 16) - 1) << 0)
+
+#define GAIN_FINE2_OFFSET 16
+#define GAIN_FINE2_BITS 16
+#define GAIN_FINE2_MASK (((1 << 16) - 1) << 16)
+
+/* Bits of AWB_ROUGH_RG_THD (0x000000a4) */
+
+#define MAX_RG_ROUGH_OFFSET 0
+#define MAX_RG_ROUGH_BITS 11
+#define MAX_RG_ROUGH_MASK (((1 << 11) - 1) << 0)
+
+#define MIN_RG_ROUGH_OFFSET 16
+#define MIN_RG_ROUGH_BITS 11
+#define MIN_RG_ROUGH_MASK (((1 << 11) - 1) << 16)
+
+/* Bits of AWB_ROUGH_BG_THD (0x000000a8) */
+
+#define MAX_BG_ROUGH_OFFSET 0
+#define MAX_BG_ROUGH_BITS 11
+#define MAX_BG_ROUGH_MASK (((1 << 11) - 1) << 0)
+
+#define MIN_BG_ROUGH_OFFSET 16
+#define MIN_BG_ROUGH_BITS 11
+#define MIN_BG_ROUGH_MASK (((1 << 11) - 1) << 16)
+
+/* Bits of AWB_ROUGH_BRIGHT_MIN_THD (0x000000ac) */
+
+#define MIN_BRIGHT_ROUGH_OFFSET 0
+#define MIN_BRIGHT_ROUGH_BITS 19
+#define MIN_BRIGHT_ROUGH_MASK (((1 << 19) - 1) << 0)
+
+/* Bits of AWB_ROUGH_BRIGHT_MAX_THD (0x000000b0) */
+
+#define MAX_BRIGHT_ROUGH_OFFSET 0
+#define MAX_BRIGHT_ROUGH_BITS 19
+#define MAX_BRIGHT_ROUGH_MASK (((1 << 19) - 1) << 0)
+
+/* Bits of AWB_ROUGH_GAIN_R_1_2 (0x000000b4) */
+
+#define GAIN_R_ROUGH_1_OFFSET 0
+#define GAIN_R_ROUGH_1_BITS 11
+#define GAIN_R_ROUGH_1_MASK (((1 << 11) - 1) << 0)
+
+#define GAIN_R_ROUGH_2_OFFSET 16
+#define GAIN_R_ROUGH_2_BITS 11
+#define GAIN_R_ROUGH_2_MASK (((1 << 11) - 1) << 16)
+
+/* Bits of AWB_ROUGH_GAIN_R_1_4 (0x000000b8) */
+
+#define GAIN_R_ROUGH_3_OFFSET 0
+#define GAIN_R_ROUGH_3_BITS 11
+#define GAIN_R_ROUGH_3_MASK (((1 << 11) - 1) << 0)
+
+#define GAIN_R_ROUGH_4_OFFSET 16
+#define GAIN_R_ROUGH_4_BITS 11
+#define GAIN_R_ROUGH_4_MASK (((1 << 11) - 1) << 16)
+
+/* Bits of AWB_ROUGH_GAIN_R_5_6 (0x000000bc) */
+
+#define GAIN_R_ROUGH_5_OFFSET 0
+#define GAIN_R_ROUGH_5_BITS 11
+#define GAIN_R_ROUGH_5_MASK (((1 << 11) - 1) << 0)
+
+#define GAIN_R_ROUGH_6_OFFSET 16
+#define GAIN_R_ROUGH_6_BITS 11
+#define GAIN_R_ROUGH_6_MASK (((1 << 11) - 1) << 16)
+
+/* Bits of AWB_ROUGH_GAIN_B_1_2 (0x000000c0) */
+
+#define GAIN_B_ROUGH_1_OFFSET 0
+#define GAIN_B_ROUGH_1_BITS 11
+#define GAIN_B_ROUGH_1_MASK (((1 << 11) - 1) << 0)
+
+#define GAIN_B_ROUGH_2_OFFSET 16
+#define GAIN_B_ROUGH_2_BITS 11
+#define GAIN_B_ROUGH_2_MASK (((1 << 11) - 1) << 16)
+
+/* Bits of AWB_ROUGH_GAIN_B_3_4 (0x000000c4) */
+
+#define GAIN_B_ROUGH_3_OFFSET 0
+#define GAIN_B_ROUGH_3_BITS 11
+#define GAIN_B_ROUGH_3_MASK (((1 << 11) - 1) << 0)
+
+#define GAIN_B_ROUGH_4_OFFSET 16
+#define GAIN_B_ROUGH_4_BITS 11
+#define GAIN_B_ROUGH_4_MASK (((1 << 11) - 1) << 16)
+
+/* Bits of AWB_ROUGH_GAIN_B_5_6 (0x000000c8) */
+
+#define GAIN_B_ROUGH_5_OFFSET 0
+#define GAIN_B_ROUGH_5_BITS 11
+#define GAIN_B_ROUGH_5_MASK (((1 << 11) - 1) << 0)
+
+#define GAIN_B_ROUGH_6_OFFSET 16
+#define GAIN_B_ROUGH_6_BITS 11
+#define GAIN_B_ROUGH_6_MASK (((1 << 11) - 1) << 16)
+
+/* Bits of AWB_WP_NUM1 (0x000000cc) */
+
+#define WP_NUM_1_OFFSET 0
+#define WP_NUM_1_BITS 22
+#define WP_NUM_1_MASK (((1 << 22) - 1) << 0)
+
+/* Bits of AWB_WP_NUM2 (0x000000d0) */
+
+#define WP_NUM_2_OFFSET 0
+#define WP_NUM_2_BITS 22
+#define WP_NUM_2_MASK (((1 << 22) - 1) << 0)
+
+/* Bits of AWB_WP_NUM3 (0x000000d4) */
+
+#define WP_NUM_3_OFFSET 0
+#define WP_NUM_3_BITS 22
+#define WP_NUM_3_MASK (((1 << 22) - 1) << 0)
+
+/* Bits of AWB_WP_NUM4 (0x000000d8) */
+
+#define WP_NUM_4_OFFSET 0
+#define WP_NUM_4_BITS 22
+#define WP_NUM_4_MASK (((1 << 22) - 1) << 0)
+
+/* Bits of AWB_WP_NUM5 (0x000000dc) */
+
+#define WP_NUM_5_OFFSET 0
+#define WP_NUM_5_BITS 22
+#define WP_NUM_5_MASK (((1 << 22) - 1) << 0)
+
+/* Bits of AWB_WP_NUM6 (0x000000e0) */
+
+#define WP_NUM_6_OFFSET 0
+#define WP_NUM_6_BITS 22
+#define WP_NUM_6_MASK (((1 << 22) - 1) << 0)
+
+/* Bits of AWB_WIN_STATIS_ADDR (0x000000e4) */
+
+#define AWB_ADDR_OFFSET 0
+#define AWB_ADDR_BITS 8
+#define AWB_ADDR_MASK (((1 << 8) - 1) << 0)
+
+/* Bits of AWB_WIN_STATIS_PIXEL_NUM (0x000000e8) */
+
+#define WIN_NUM_STATS_OFFSET 0
+#define WIN_NUM_STATS_BITS 16
+#define WIN_NUM_STATS_MASK (((1 << 16) - 1) << 0)
+
+/* Bits of AWB_WIN_BG_RG_MEAN_DIV (0x000000ec) */
+
+#define COOR_GAIN1_RF_OFFSET 0
+#define COOR_GAIN1_RF_BITS 11
+#define COOR_GAIN1_RF_MASK (((1 << 11) - 1) << 0)
+
+#define COOR_GAIN2_RF_OFFSET 16
+#define COOR_GAIN2_RF_BITS 11
+#define COOR_GAIN2_RF_MASK (((1 << 11) - 1) << 16)
+
+/* Bits of AWB_WIN_MEAN0 (0x000000f0) */
+
+#define MEAN_RF_OFFSET 0
+#define MEAN_RF_BITS 16
+#define MEAN_RF_MASK (((1 << 16) - 1) << 0)
+
+#define G_MEAN_RF_OFFSET 16
+#define G_MEAN_RF_BITS 16
+#define G_MEAN_RF_MASK (((1 << 16) - 1) << 16)
+
+/* Bits of AWB_WIN_MEAN1 (0x000000f4) */
+
+#define B_MEAN_RF_OFFSET 0
+#define B_MEAN_RF_BITS 16
+#define B_MEAN_RF_MASK (((1 << 16) - 1) << 0)
+
+#define Y_MEAN_RF_OFFSET 16
+#define Y_MEAN_RF_BITS 16
+#define Y_MEAN_RF_MASK (((1 << 16) - 1) << 16)
+
+/* Bits of AWB_WIN_R_SUM (0x000000f8) */
+
+#define SUM_R_OFFSET 0
+#define SUM_R_BITS 32
+#define SUM_R_MASK (((1 << 32) - 1) << 0)
+
+/* Bits of AWB_WIN_G_SUM (0x000000fc) */
+
+#define SUM_G_OFFSET 0
+#define SUM_G_BITS 32
+#define SUM_G_MASK (((1 << 32) - 1) << 0)
+
+/* Bits of AWB_WIN_B_SUM (0x00000100) */
+
+#define SUM_B_OFFSET 0
+#define SUM_B_BITS 32
+#define SUM_B_MASK (((1 << 32) - 1) << 0)
+
+/* Bits of AWB_OVER_EN (0x00000104) */
+
+#define OVEREXP_EN_OFFSET 0
+#define OVEREXP_EN_BITS 1
+#define OVEREXP_EN_MASK (((1 << 1) - 1) << 0)
+
+/* Bits of AWB_AWB_STEP_R_SYNC (0x00000114) */
+
+#define AWB_STEP_R_SYNC_OFFSET 0
+#define AWB_STEP_R_SYNC_BITS 8
+#define AWB_STEP_R_SYNC_MASK (((1 << 8) - 1) << 0)
+
+/* Bits of AWB_AWB_STEP_G_SYNC (0x00000118) */
+
+#define AWB_STEP_G_SYNC_OFFSET 0
+#define AWB_STEP_G_SYNC_BITS 8
+#define AWB_STEP_G_SYNC_MASK (((1 << 8) - 1) << 0)
+
+/* Bits of AWB_AWB_STEP_B_SYNC (0x00000120) */
+
+#define AWB_STEP_B_SYNC_OFFSET 0
+#define AWB_STEP_B_SYNC_BITS 8
+#define AWB_STEP_B_SYNC_MASK (((1 << 8) - 1) << 0)
+
+/* Bits of AWB_AWB_GAIN_MODE_SYNC (0x00000124) */
+
+#define AWB_GAIN_MODE_SYNC_OFFSET 0
+#define AWB_GAIN_MODE_SYNC_BITS 1
+#define AWB_GAIN_MODE_SYNC_MASK (((1 << 1) - 1) << 0)
+
+/* Bits of AWB_OVEREXP_WR_SYNC (0x0000012c) */
+
+#define OVEREXP_WR_SYNC_OFFSET 0
+#define OVEREXP_WR_SYNC_BITS 7
+#define OVEREXP_WR_SYNC_MASK (((1 << 7) - 1) << 0)
+
+/* Bits of AWB_OVEREXP_WG_SYNC (0x00000130) */
+
+#define OVEREXP_WG_SYNC_OFFSET 0
+#define OVEREXP_WG_SYNC_BITS 7
+#define OVEREXP_WG_SYNC_MASK (((1 << 7) - 1) << 0)
+
+/* Bits of AWB_OVEREXP_WB_SYNC (0x00000134) */
+
+#define OVEREXP_WB_SYNC_OFFSET 0
+#define OVEREXP_WB_SYNC_BITS 7
+#define OVEREXP_WB_SYNC_MASK (((1 << 7) - 1) << 0)
+
+/* Bits of AWB_OVEREXP_THD_SYNC (0x00000138) */
+
+#define OVEREXP_THD_SYNC_OFFSET 0
+#define OVEREXP_THD_SYNC_BITS 21
+#define OVEREXP_THD_SYNC_MASK (((1 << 21) - 1) << 0)
+
+/* Bits of AWB_OVEREXP_RATIO_SYNC (0x0000013c) */
+
+#define OVEREXP_RATIO_SYNC_OFFSET 0
+#define OVEREXP_RATIO_SYNC_BITS 12
+#define OVEREXP_RATIO_SYNC_MASK (((1 << 12) - 1) << 0)
+
+/* Bits of AWB_OVEREXP_EN_MODE_SYNC (0x00000140) */
+
+#define OVEREXP_EN_MODE_SYNC_OFFSET 0
+#define OVEREXP_EN_MODE_SYNC_BITS 1
+#define OVEREXP_EN_MODE_SYNC_MASK (((1 << 1) - 1) << 0)
+
+/* Bits of AWB_REG_LOAD (0x00000144) */
+
+#define AWB_REG_LOAD_OFFSET 0
+#define AWB_REG_LOAD_BITS 1
+#define AWB_REG_LOAD_MASK (((1 << 1) - 1) << 0)
+
+/* Bits of AWB_OVER_EN_SYNC (0x00000148) */
+
+#define OVEREXP_EN_SYNC_OFFSET 0
+#define OVEREXP_EN_SYNC_BITS 1
+#define OVEREXP_EN_SYNC_MASK (((1 << 1) - 1) << 0)
+
+/* Bits of AWB_OVEREXP_DEBUG_MODE (0x0000014c) */
+
+#define OVER_EXPOSED_DEBUG_MODE_OFFSET 0
+#define OVER_EXPOSED_DEBUG_MODE_BITS 2
+#define OVER_EXPOSED_DEBUG_MODE_MASK (((1 << 2) - 1) << 0)
+
+#endif /* _AWB_H_INC_ */

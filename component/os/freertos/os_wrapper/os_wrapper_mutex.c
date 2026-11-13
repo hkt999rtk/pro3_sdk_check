@@ -1,0 +1,261 @@
+/*
+ * Copyright (c) 2024 Realtek Semiconductor Corp.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <stdio.h>
+#include "ameba.h"
+#include "ameba_pmu.h"
+#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+#include "os_wrapper.h"
+#include "os_wrapper_specific.h"
+
+/* FreeRTOS Static Implementation */
+#if(configSUPPORT_STATIC_ALLOCATION == 1)
+extern StaticSemaphore_t *__reserved_get_mutex_from_pool(void);
+extern void __reserved_release_mutex_to_pool(void *buf);
+#endif
+
+/* Only "has the scheduler started" matters here. On SMP, xTaskGetSchedulerState()
+ * enters a kernel critical section, so read the port flag instead; it is set in
+ * xPortStartScheduler() after xSchedulerRunning. */
+static inline int rtos_mutex_sched_is_started(void)
+{
+#if defined(RTOS_NUM_CORES) && (RTOS_NUM_CORES > 1)
+	extern volatile uint32_t uxPortSchedulerStart[configNUM_CORES];
+	return uxPortSchedulerStart[portPrimaryCoreID] != pdFALSE;
+#else
+	return xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED;
+#endif
+}
+
+int rtos_mutex_create_static(rtos_mutex_t *pp_handle)
+{
+#if(configSUPPORT_STATIC_ALLOCATION == 1)
+	StaticSemaphore_t *mutex;
+
+	if (pp_handle == NULL) {
+		return RTK_FAIL;
+	}
+
+	mutex = __reserved_get_mutex_from_pool();
+
+	if (mutex == NULL) {
+		return rtos_mutex_create(pp_handle);
+	} else {
+		*pp_handle = xSemaphoreCreateMutexStatic(mutex);
+
+		if (*pp_handle != NULL) {
+			return RTK_SUCCESS;
+		} else {
+			return RTK_FAIL;
+		}
+	}
+#else
+	return rtos_mutex_create(pp_handle);
+#endif
+}
+
+int rtos_mutex_delete_static(rtos_mutex_t p_handle)
+{
+#if(configSUPPORT_STATIC_ALLOCATION == 1)
+	int ret = rtos_mutex_delete(p_handle);
+
+	if (ret == RTK_SUCCESS) {
+		__reserved_release_mutex_to_pool(p_handle);
+	}
+	return ret;
+#else
+	return rtos_mutex_delete(p_handle);
+#endif
+}
+
+int rtos_mutex_recursive_create_static(rtos_mutex_t *pp_handle)
+{
+#if(configSUPPORT_STATIC_ALLOCATION == 1)
+	StaticSemaphore_t *mutex;
+
+	if (pp_handle == NULL) {
+		return RTK_FAIL;
+	}
+
+	mutex = __reserved_get_mutex_from_pool();
+
+	if (mutex == NULL) {
+		return rtos_mutex_create(pp_handle);
+	} else {
+		*pp_handle = xSemaphoreCreateRecursiveMutexStatic(mutex);
+
+		if (*pp_handle != NULL) {
+			return RTK_SUCCESS;
+		} else {
+			return RTK_FAIL;
+		}
+	}
+#else
+	return rtos_mutex_recursive_create(pp_handle);
+#endif
+}
+
+int rtos_mutex_recursive_delete_static(rtos_mutex_t p_handle)
+{
+	return rtos_mutex_delete_static(p_handle);
+}
+
+int rtos_mutex_create(rtos_mutex_t *pp_handle)
+{
+	if (pp_handle == NULL) {
+		return RTK_FAIL;
+	}
+
+	*pp_handle = (rtos_mutex_t)xSemaphoreCreateMutex();
+	if (*pp_handle != NULL) {
+		return RTK_SUCCESS;
+	} else {
+		return RTK_FAIL;
+	}
+}
+
+int rtos_mutex_delete(rtos_mutex_t p_handle)
+{
+	if (p_handle == NULL) {
+		return RTK_FAIL;
+	}
+
+	if (xSemaphoreGetMutexHolder((QueueHandle_t)p_handle) == NULL) {
+		vSemaphoreDelete((QueueHandle_t)p_handle);
+		return RTK_SUCCESS;
+	} else {
+		vSemaphoreDelete((QueueHandle_t)p_handle);
+		RTK_LOGS(NOTAG, RTK_LOG_ERROR, "[%s] %s <<< The mutex has not been released, but the mutex has been deleted. >>>\n", pcTaskGetTaskName(NULL), __FUNCTION__);
+		return RTK_FAIL;
+	}
+}
+
+int rtos_mutex_take(rtos_mutex_t p_handle, uint32_t wait_ms)
+{
+	BaseType_t ret;
+
+	/* Can't take mutex if shedular is not started */
+	if (!rtos_mutex_sched_is_started()) {
+		return RTK_FAIL;
+	}
+
+	/*
+	 * NOTE: xSemaphoreTakeFromISR() is NOT designed for mutex!
+	 * FreeRTOS mutex uses a queue internally, and the FromISR API is only
+	 * for binary semaphores and counting semaphores. Using FromISR with mutex
+	 * causes priority inversion and undefined behavior.
+	 *
+	 * Instead of silently failing, we call xSemaphoreTake() directly.
+	 * If configASSERT is enabled in FreeRTOS, it will trigger an assert
+	 * when called from ISR context, immediately catching this bug.
+	 */
+	/* Force non-blocking when the OS cannot perform a context switch:
+	 * - PMU suspend flow: FreeRTOS would assert on blocking call.
+	 * - Inside critical section: PendSV is masked by BASEPRI, causing an
+	 *   infinite spin with corrupted scheduler event-list state. */
+	if (!pmu_yield_os_check() ||
+		rtos_get_critical_state()) {
+		wait_ms = 0;
+	}
+
+	ret = xSemaphoreTake((QueueHandle_t)p_handle, RTOS_CONVERT_MS_TO_TICKS(wait_ms));
+
+	if (ret != pdTRUE) {
+		return RTK_FAIL;
+	}
+
+	return RTK_SUCCESS;
+}
+
+int rtos_mutex_give(rtos_mutex_t p_handle)
+{
+	BaseType_t ret;
+
+	/* Can't give mutex if shedular is not started */
+	if (!rtos_mutex_sched_is_started()) {
+		return RTK_FAIL;
+	}
+
+	/*
+	 * NOTE: xSemaphoreGiveFromISR() is NOT designed for mutex!
+	 * FreeRTOS mutex uses a queue internally, and the FromISR API is only
+	 * for binary semaphores and counting semaphores. Using FromISR with mutex
+	 * causes priority inversion and undefined behavior.
+	 *
+	 * Instead of silently failing, we call xSemaphoreGive() directly.
+	 * If configASSERT is enabled in FreeRTOS, it will trigger an assert
+	 * when called from ISR context, immediately catching this bug.
+	 */
+	ret = xSemaphoreGive(p_handle);
+	if (ret != pdTRUE) {
+		return RTK_FAIL;
+	}
+
+	return RTK_SUCCESS;
+}
+
+int rtos_mutex_recursive_create(rtos_mutex_t *pp_handle)
+{
+	if (pp_handle == NULL) {
+		return RTK_FAIL;
+	}
+
+	*pp_handle = (rtos_mutex_t)xSemaphoreCreateRecursiveMutex();
+	if (*pp_handle != NULL) {
+		return RTK_SUCCESS;
+	} else {
+		return RTK_FAIL;
+	}
+}
+
+int rtos_mutex_recursive_delete(rtos_mutex_t p_handle)
+{
+	return rtos_mutex_delete(p_handle);
+}
+
+int rtos_mutex_recursive_take(rtos_mutex_t p_handle, uint32_t wait_ms)
+{
+	BaseType_t ret;
+
+	if (rtos_critical_is_in_interrupt()) {
+		return RTK_FAIL;
+	}
+
+	/* Force non-blocking when the OS cannot perform a context switch:
+	 * - PMU suspend flow: FreeRTOS would assert on blocking call.
+	 * - Inside critical section: PendSV is masked by BASEPRI, causing an
+	 *   infinite spin with corrupted scheduler event-list state. */
+	if (!pmu_yield_os_check() ||
+		rtos_get_critical_state()) {
+		wait_ms = 0;
+	}
+
+	ret = xSemaphoreTakeRecursive((QueueHandle_t)p_handle, RTOS_CONVERT_MS_TO_TICKS(wait_ms));
+
+	if (ret == pdTRUE) {
+		return RTK_SUCCESS;
+	} else {
+		return RTK_FAIL;
+	}
+}
+
+int rtos_mutex_recursive_give(rtos_mutex_t p_handle)
+{
+	BaseType_t ret;
+
+	if (rtos_critical_is_in_interrupt()) {
+		return RTK_FAIL;
+	}
+
+	ret = xSemaphoreGiveRecursive((QueueHandle_t)p_handle);
+	if (ret == pdTRUE) {
+		return RTK_SUCCESS;
+	} else {
+		return RTK_FAIL;
+	}
+}

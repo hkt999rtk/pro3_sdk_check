@@ -1,0 +1,40 @@
+Port name,Port type,ID,Interface Type,Data Width,Address Width,ID Width,Base address,Top address,Size,Clk Domain,Security Attribute
+media_km4_slv,Slave,S1-1,AXI4,32,32,12,0x6F080000,0x6F0FFFFF,512KB,media_km4_clk,SW_CONF
+ddrc_p0,Slave,S2-1,AXI4,128,32,,0x80000000,0x9FFFFFFF,512MB,ddrc_clk,S_NS
+ddrc_p1,Slave,S2-2,AXI4,128,32,,0x80000000,0x9FFFFFFF,512MB,ddrc_clk,S_NS
+ddrc_p2,Slave,S2-3,AXI4,128,32,,0x80000000,0x9FFFFFFF,512MB,ddrc_clk,S_NS
+ddrc_p3,Slave,S2-4,AXI4,128,32,,0x80000000,0x9FFFFFFF,512MB,ddrc_clk,S_NS
+ddrc_p4,Slave,S2-5,AXI4,128,32,,0x80000000,0x9FFFFFFF,512MB,ddrc_clk,S_NS
+ddrc_p5,Slave,S2-6,AXI4,128,32,,0x80000000,0x9FFFFFFF,512MB,ddrc_clk,S_NS
+ca32_aux,Slave,S3-1,APB4,32,32,,0x60410000,0x607FFFFF,4MB,ca32_peri_clk,SW_CONF
+gic,Slave,S3-2,AXI4,32,32,,0x60400000,0x6040FFFF,64KB,ca32_peri_clk,SW_CONF
+encoder_slv,Slave,S4-1,APB4,32,32,,0x60108000,0x60109FFF,8KB,fast_pclk,SW_CONF
+nn_slv,Slave,S4-2,AHB,32,32,,0x60180000,0x601FFFFF,512KB,fast_pclk,SW_CONF
+isp_slv,Slave,S4-3,APB4,32,32,,0x60000000,0x600FFFFF,1MB,isp_mbus_clk,SW_CONF
+remap_enc,Slave,S4-4,APB4,32,32,,0x6010A000,0x6010BFFF,8KB,encoder_mbus_clk,SW_CONF
+remap_isp,Slave,S4-5,APB4,32,32,,0x60100000,0x60101FFF,8KB,isp_mbus_clk,SW_CONF
+ge_slv,Slave,S4-6,APB4,32,32,,0x60102000,0x60103FFF,8KB,ge_clk,SW_CONF
+tile_scaler_slv,Slave,S4-7,APB4,32,32,,0x60104000,0x60105FFF,8KB,ge_clk,SW_CONF
+dmac1_slv,Slave,S4-8,APB4,32,32,,0x60106000,0x60107FFF,8KB,platform_clk,S_NS
+rxi300_core,Slave,S4-9,APB4,32,32,,0x6010C000,0x6010FFFF,16KB,platform_clk,SW_CONF
+ai_dns,Slave,S1-2,AXI,32,32,,0x6F100000,0x6F13FFFF,256KB,aid_core_clk,SW_CONF
+Dmac0_slv,Slave,S4-10,APB4,32,32,,0x60108000,0x60109FFF,8KB,sys_mem_clk,S_NS
+video_mem,Slave,S5,AXI4,128,32,,0x6F000000,0x6F07FFFF,512KB,platform_clk,SW_CONF
+core_peri_slv,Slave,S6,AXI4,32,32,,0x40000000,0x5FFFFFFF,256MB,sys_mem_clk,S_NS
+core_mem_slv,Slave,S7,AXI4,64,32,,0x08000000,0x3FFFFFFF,896MB,sys_mem_clk,S_NS
+sport0,Slave,S8-1,AHB,32,32,,0x60200000,0x60200FFF,4KB,slow_pclk,SW_CONF
+sport1,Slave,S8-2,AHB,32,32,,0x60201000,0x60201FFF,4KB,slow_pclk,SW_CONF
+audio_dig,Slave,S8-3,APB4,32,32,,0x60202000,0x60202FFF,4KB,slow_pclk,SW_CONF
+audio_ana,Slave,S8-4,APB4,32,32,,0x60203000,0x60203FFF,4KB,slow_pclk,SW_CONF
+lx_slv,Slave,S8-5,AXI-lite,32,32,,0x60204000,0x6020BFFF,32KB,slow_pclk,SW_CONF
+non_sec_core,Slave,S8-6,APB4,32,32,,0x6020C000,0x6020CFFF,4KB,slow_pclk,SW_CONF
+wdt_ca32,Slave,S8-7,APB4,32,32,,0x6020D000,0x6020DFFF,4KB,slow_pclk,SW_CONF
+wdt_media,Slave ,S8-8,APB4,32,32,,0x6020E000,0x6020EFFF,4KB,slow_pclk,SW_CONF
+usb_otg_slv,Slave,S8-9,AHB,32,32,,0x60210000,0x6024FFFF,256KB,slow_pclk,SW_CONF
+core_gpio_slv,Slave,S8-10,APB4,32,32,,0x6020F000,0x6020FFFF,4KB,slow_pclk,SW_CONF
+sys_ctrl,Slave ,S8-11,APB4,32,32,,0x60250000,0x6025FFFF,64KB,slow_pclk,SW_CONF
+ddrc_cfg,Slave,S8-12,APB4,32,32,,0x60300000,0x6030FFFF,64KB,ddrc_clk,SW_CONF
+dram_reg,Slave,S8-13,APB4,32,32,,0x60310000,0x6031FFFF,64KB,ddrc_clk,SW_CONF
+phy_cal,Slave,S8-14,APB4,32,32,,0x60320000,0x6032FFFF,64KB,ddrc_clk,SW_CONF
+phy_cfg,Slave,S8-15,APB4,32,32,,0x60330000,0x6033FFFF,64KB,ddrc_clk,SW_CONF
+traffic_gen,Slave,S8-16,APB4,32,32,,0x60340000,0x60340FFF,4KB,ddrc_clk,SW_CONF

@@ -1,0 +1,416 @@
+/*
+ * Copyright (c) 2024 Realtek Semiconductor Corp.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* Includes ------------------------------------------------------------------*/
+
+#include "usbh_msc.h"
+#include "usbh_msc_scsi.h"
+
+/* Private defines -----------------------------------------------------------*/
+
+/* Private types -------------------------------------------------------------*/
+
+/* Private macros ------------------------------------------------------------*/
+
+/* Private function prototypes -----------------------------------------------*/
+
+/* Private variables ---------------------------------------------------------*/
+
+static const char *const TAG = "MSC";
+
+/* Exported variables --------------------------------------------------------*/
+
+/* Private functions ---------------------------------------------------------*/
+
+/**
+  * @brief  Zero the part of a small command response the device did not send.
+  * @note   BOT 6.7 case 5 (Hi > Di) lets the device send less than requested. The response
+  *         shares hbot.data with the other commands, so a field past the received data would
+  *         otherwise hold what an earlier command left there; zeroed, it reads as absent.
+  * @param  msc: Msc host handle
+  * @param  len: Response length requested
+  * @retval None
+  */
+static void usbh_scsi_clear_unsent(usbh_msc_host_t *msc, u32 len)
+{
+	if (msc->hbot.rx_data_len < len) {
+		usb_os_memset((void *)&msc->hbot.pbuf[msc->hbot.rx_data_len], 0, len - msc->hbot.rx_data_len);
+	}
+}
+
+/* Exported functions --------------------------------------------------------*/
+
+/**
+  * @brief  Issue TestUnitReady command.
+  * @param  msc: Msc host handle
+  * @param  lun: Logical Unit Number
+  * @retval Status
+  */
+int usbh_scsi_test_unit_ready(usbh_msc_host_t *msc, u8 lun)
+{
+	int status = RTK_FAIL;
+	usb_msc_bot_cbw_t *cbw = msc->hbot.cbw;
+
+	switch (msc->hbot.cmd_state) {
+	case BOT_CMD_SEND:
+
+		/*Prepare the CBW and relevant field*/
+		cbw->field.dCBWDataTransferLength = TEST_UNIT_READY_LEN;
+		cbw->field.bmCBWFlags = USB_H2D;
+		cbw->field.bCBWCBLength = CBW_LENGTH_SIX_BYTE_COMMAND;
+
+		usb_os_memset((void *)cbw->field.CBWCB, 0, CBW_CB_LENGTH);
+		cbw->field.CBWCB[0] = SCSI_TEST_UNIT_READY;
+
+		msc->hbot.state = BOT_SEND_CBW;
+		msc->bulk_out.xfer_state = USBH_EP_XFER_START;
+		msc->hbot.cmd_state = BOT_CMD_BUSY;
+		status = -RTK_ERR_BUSY;
+		break;
+
+	case BOT_CMD_BUSY:
+		status = usbh_msc_bot_process(msc->host, lun);
+		break;
+
+	default:
+		break;
+	}
+
+	return status;
+}
+
+/**
+  * @brief  Issue Read Capacity command.
+  * @param  msc: Msc host handle
+  * @param  lun: Logical Unit Number
+  * @param  capacity: pointer to the capacity structure
+  * @retval Status
+  */
+int usbh_scsi_read_capacity(usbh_msc_host_t *msc, u8 lun, usbh_scsi_capacity_t *capacity)
+{
+	int status = RTK_FAIL;
+	usb_msc_bot_cbw_t *cbw = msc->hbot.cbw;
+
+	switch (msc->hbot.cmd_state) {
+	case BOT_CMD_SEND:
+
+		/*Prepare the CBW and relevant field*/
+		cbw->field.dCBWDataTransferLength = READ_CAPACITY10_DATA_LEN;
+		cbw->field.bmCBWFlags = USB_D2H;
+		cbw->field.bCBWCBLength = CBW_LENGTH;
+
+		usb_os_memset((void *)cbw->field.CBWCB, 0, CBW_CB_LENGTH);
+		cbw->field.CBWCB[0] = SCSI_READ_CAPACITY10;
+
+		msc->hbot.state = BOT_SEND_CBW;
+		msc->bulk_out.xfer_state = USBH_EP_XFER_START;
+		msc->hbot.cmd_state = BOT_CMD_BUSY;
+		msc->hbot.pbuf = msc->hbot.data;
+		status = -RTK_ERR_BUSY;
+		break;
+
+	case BOT_CMD_BUSY:
+
+		status = usbh_msc_bot_process(msc->host, lun);
+
+		if (status == RTK_SUCCESS) {
+			/* A short response leaves a zero block length, which the check below refuses */
+			usbh_scsi_clear_unsent(msc, READ_CAPACITY10_DATA_LEN);
+			/* READ CAPACITY(10) returns Last LBA; block count = Last LBA + 1 */
+			u32 last_lba = ((u32)msc->hbot.pbuf[0] << 24U) | ((u32)msc->hbot.pbuf[1] << 16U) |
+						   ((u32)msc->hbot.pbuf[2] << 8U) | (u32)msc->hbot.pbuf[3];
+			/* SBC: last_lba == 0xFFFFFFFF means device needs READ_CAPACITY(16) */
+			capacity->block_nbr = (last_lba < 0xFFFFFFFFU) ? last_lba + 1U : 0xFFFFFFFFU;
+
+			/* Block length is a 4-byte big-endian field (bytes 4-7) */
+			u32 blk_len = ((u32)msc->hbot.pbuf[4] << 24U) | ((u32)msc->hbot.pbuf[5] << 16U) |
+						  ((u32)msc->hbot.pbuf[6] << 8U) | (u32)msc->hbot.pbuf[7];
+
+			/* Validate the geometry at its source: every later transfer derives
+			   dCBWDataTransferLength from block_size, so a bogus value would build an
+			   illegal CBW (BOT 6.7 presumes a self-consistent one). Accept only a power
+			   of two inside the range the block layer can handle, else clear the geometry
+			   and report -RTK_ERR_BADARG so the caller can mark the LUN unusable. */
+			if ((blk_len < USBH_MSC_MIN_BLOCK_SIZE) || (blk_len > USBH_MSC_MAX_BLOCK_SIZE) ||
+				((blk_len & (blk_len - 1U)) != 0U)) {
+				RTK_LOGS(TAG, RTK_LOG_ERROR, "Bad blk size %d\n", blk_len);
+				capacity->block_nbr = 0U;
+				capacity->block_size = 0U;
+				status = -RTK_ERR_BADARG;
+			} else {
+				capacity->block_size = blk_len;
+			}
+		}
+		break;
+
+	default:
+		break;
+	}
+
+	return status;
+}
+
+/**
+  * @brief  Issue Inquiry command.
+  * @param  msc: Msc host handle
+  * @param  lun: Logical Unit Number
+  * @param  inquiry: pointer to the inquiry structure
+  * @retval Status
+  */
+int usbh_scsi_inquiry(usbh_msc_host_t *msc, u8 lun, usbh_scsi_inquiry_t *inquiry)
+{
+	int status = RTK_FAIL;
+	usb_msc_bot_cbw_t *cbw = msc->hbot.cbw;
+
+	switch (msc->hbot.cmd_state) {
+	case BOT_CMD_SEND:
+
+		/*Prepare the CBW and relevant field*/
+		cbw->field.dCBWDataTransferLength = INQUIRY_DATA_LEN;
+		cbw->field.bmCBWFlags = USB_D2H;
+		cbw->field.bCBWCBLength = CBW_LENGTH_SIX_BYTE_COMMAND;
+
+		usb_os_memset((void *)cbw->field.CBWCB, 0, CBW_CB_LENGTH);
+		cbw->field.CBWCB[0] = SCSI_INQUIRY;
+		/* CBWCB[1]: EVPD bit only; bits 7:1 reserved per SPC-3; LUN in bCBWLUN */
+		cbw->field.CBWCB[1] = 0U;
+		cbw->field.CBWCB[2] = 0U;
+		cbw->field.CBWCB[3] = 0U;
+		cbw->field.CBWCB[4] = 0x24U;
+		cbw->field.CBWCB[5] = 0U;
+
+		msc->hbot.state = BOT_SEND_CBW;
+		msc->bulk_out.xfer_state = USBH_EP_XFER_START;
+		msc->hbot.cmd_state = BOT_CMD_BUSY;
+		msc->hbot.pbuf = msc->hbot.data;
+		status = -RTK_ERR_BUSY;
+		break;
+
+	case BOT_CMD_BUSY:
+
+		status = usbh_msc_bot_process(msc->host, lun);
+
+		if (status == RTK_SUCCESS) {
+			usbh_scsi_clear_unsent(msc, INQUIRY_DATA_LEN);
+			usb_os_memset((void *)inquiry, 0, sizeof(usbh_scsi_inquiry_t));
+			/*assign Inquiry Data */
+			inquiry->device_type = msc->hbot.pbuf[0] & 0x1FU;
+			inquiry->peripheral_qualifier = msc->hbot.pbuf[0] >> 5U;
+
+			if (((u32)msc->hbot.pbuf[1] & 0x80U) == 0x80U) {
+				inquiry->removable_media = 1U;
+			} else {
+				inquiry->removable_media = 0U;
+			}
+
+			usb_os_memcpy((void *)inquiry->vendor_id, (const void *)&msc->hbot.pbuf[8], 8U);
+			usb_os_memcpy((void *)inquiry->product_id, (const void *)&msc->hbot.pbuf[16], 16U);
+			usb_os_memcpy((void *)inquiry->revision_id, (const void *)&msc->hbot.pbuf[32], 4U);
+		}
+		break;
+
+	default:
+		break;
+	}
+
+	return status;
+}
+
+/**
+  * @brief  Issue RequestSense command.
+  * @param  msc: Msc host handle
+  * @param  lun: Logical Unit Number
+  * @param  sense_data: pointer to the sense data structure
+  * @retval Status
+  */
+int usbh_scsi_request_sense(usbh_msc_host_t *msc, u8 lun, usb_msc_scsi_sense_data_t *sense_data)
+{
+	int status = RTK_FAIL;
+	usb_msc_bot_cbw_t *cbw = msc->hbot.cbw;
+
+	switch (msc->hbot.cmd_state) {
+	case BOT_CMD_SEND:
+
+		/*Prepare the CBW and relevant field*/
+		cbw->field.dCBWDataTransferLength = REQUEST_SENSE_DATA_LEN;
+		cbw->field.bmCBWFlags = USB_D2H;
+		cbw->field.bCBWCBLength = CBW_LENGTH_SIX_BYTE_COMMAND;
+
+		usb_os_memset((void *)cbw->field.CBWCB, 0, CBW_CB_LENGTH);
+		cbw->field.CBWCB[0] = SCSI_REQUEST_SENSE;
+		/* CBWCB[1]: DESC bit only; bits 7:1 reserved per SPC-3; LUN in bCBWLUN */
+		cbw->field.CBWCB[1] = 0U;
+		cbw->field.CBWCB[2] = 0U;
+		cbw->field.CBWCB[3] = 0U;
+		cbw->field.CBWCB[4] = REQUEST_SENSE_DATA_LEN;
+		cbw->field.CBWCB[5] = 0U;
+
+		msc->hbot.state = BOT_SEND_CBW;
+		msc->bulk_out.xfer_state = USBH_EP_XFER_START;
+		msc->hbot.cmd_state = BOT_CMD_BUSY;
+		msc->hbot.pbuf = msc->hbot.data;
+		status = -RTK_ERR_BUSY;
+		break;
+
+	case BOT_CMD_BUSY:
+
+		status = usbh_msc_bot_process(msc->host, lun);
+
+		if (status == RTK_SUCCESS) {
+			/* A response too short to carry the ASC/ASCQ reports them as 0, no additional sense */
+			usbh_scsi_clear_unsent(msc, REQUEST_SENSE_DATA_LEN);
+			sense_data->key  = msc->hbot.pbuf[2] & 0x0FU;
+			sense_data->asc  = msc->hbot.pbuf[12];
+			sense_data->ascq = msc->hbot.pbuf[13];
+		}
+		break;
+
+	default:
+		break;
+	}
+
+	return status;
+}
+
+/**
+  * @brief  Issue write10 command.
+  * @note   Moves one chunk of a WRITE through the bounce buffer, see usbh_msc_process_rw().
+  * @param  msc: Msc host handle
+  * @param  lun: Logical Unit Number
+  * @param  address: sector address
+  * @param  pbuf: pointer to data
+  * @param  length: number of sector to write, at most one bounce buffer
+  * @retval Status
+  */
+int usbh_scsi_write(usbh_msc_host_t *msc, u8 lun, u32 address, const u8 *pbuf, u32 length)
+{
+	int status = RTK_FAIL;
+	usb_msc_bot_cbw_t *cbw = msc->hbot.cbw;
+	u32 block_size = msc->unit[lun].capacity.block_size;
+
+	/* BOT 6.7 has no case for a zero-length WRITE10, and the chunk must fit the bounce buffer */
+	if ((block_size == 0U) || (length == 0U) || (length > (msc->hbot.bounce_len / block_size))) {
+		return -RTK_ERR_BADARG;
+	}
+
+	switch (msc->hbot.cmd_state) {
+	case BOT_CMD_SEND:
+
+		/*Prepare the CBW and relevant field*/
+		cbw->field.dCBWDataTransferLength = length * block_size;
+		cbw->field.bmCBWFlags = USB_H2D;
+		cbw->field.bCBWCBLength = CBW_LENGTH;
+
+		usb_os_memset((void *)cbw->field.CBWCB, 0, CBW_CB_LENGTH);
+		cbw->field.CBWCB[0] = SCSI_WRITE10;
+
+		/*logical block address*/
+		cbw->field.CBWCB[2] = (u8)(address >> 24U);
+		cbw->field.CBWCB[3] = (u8)(address >> 16U);
+		cbw->field.CBWCB[4] = (u8)(address >> 8U);
+		cbw->field.CBWCB[5] = (u8)address;
+
+		/*Transfer length, fits 16 bits as the bounce buffer bounds it */
+		cbw->field.CBWCB[7] = (u8)(length >> 8U);
+		cbw->field.CBWCB[8] = (u8)length;
+
+		msc->hbot.pbuf = msc->hbot.bounce_buf;
+		usb_os_memcpy((void *)msc->hbot.pbuf, (const void *)pbuf, cbw->field.dCBWDataTransferLength);
+		msc->hbot.state = BOT_SEND_CBW;
+		msc->bulk_out.xfer_state = USBH_EP_XFER_START;
+		msc->hbot.cmd_state = BOT_CMD_BUSY;
+		status = -RTK_ERR_BUSY;
+		break;
+
+	case BOT_CMD_BUSY:
+		status = usbh_msc_bot_process(msc->host, lun);
+		break;
+
+	default:
+		break;
+	}
+
+	return status;
+}
+
+/**
+  * @brief  Issue Read10 command.
+  * @note   Moves one chunk of a READ through the bounce buffer, see usbh_msc_process_rw().
+  * @param  msc: Msc host handle
+  * @param  lun: Logical Unit Number
+  * @param  address: sector address
+  * @param  pbuf: pointer to data
+  * @param  length: number of sector to read, at most one bounce buffer
+  * @retval Status
+  */
+int usbh_scsi_read(usbh_msc_host_t *msc, u8 lun, u32 address, u8 *pbuf, u32 length)
+{
+	int status = RTK_FAIL;
+	usb_msc_bot_cbw_t *cbw = msc->hbot.cbw;
+	u32 block_size = msc->unit[lun].capacity.block_size;
+
+	/* BOT 6.7 has no case for a zero-length READ10, and the chunk must fit the bounce buffer */
+	if ((block_size == 0U) || (length == 0U) || (length > (msc->hbot.bounce_len / block_size))) {
+		return -RTK_ERR_BADARG;
+	}
+
+	switch (msc->hbot.cmd_state) {
+	case BOT_CMD_SEND:
+
+		/*Prepare the CBW and relevant field*/
+		cbw->field.dCBWDataTransferLength = length * block_size;
+		cbw->field.bmCBWFlags = USB_D2H;
+		cbw->field.bCBWCBLength = CBW_LENGTH;
+
+		usb_os_memset((void *)cbw->field.CBWCB, 0, CBW_CB_LENGTH);
+		cbw->field.CBWCB[0] = SCSI_READ10;
+
+		/*logical block address*/
+		cbw->field.CBWCB[2] = (u8)(address >> 24U);
+		cbw->field.CBWCB[3] = (u8)(address >> 16U);
+		cbw->field.CBWCB[4] = (u8)(address >> 8U);
+		cbw->field.CBWCB[5] = (u8)address;
+
+		/*Transfer length, fits 16 bits as the bounce buffer bounds it */
+		cbw->field.CBWCB[7] = (u8)(length >> 8U);
+		cbw->field.CBWCB[8] = (u8)length;
+
+		msc->hbot.pbuf = msc->hbot.bounce_buf;
+		msc->hbot.state = BOT_SEND_CBW;
+		msc->bulk_out.xfer_state = USBH_EP_XFER_START;
+		msc->hbot.cmd_state = BOT_CMD_BUSY;
+		status = -RTK_ERR_BUSY;
+		break;
+
+	case BOT_CMD_BUSY:
+		status = usbh_msc_bot_process(msc->host, lun);
+		if (status == RTK_SUCCESS) {
+			/* BOT §5.2/§6.7 case 5: only the bytes the device really transferred are valid data.
+			   The tail of the bounce buffer is not medium content, so it must never be handed
+			   to the caller as if it were. */
+			u32 req_len = cbw->field.dCBWDataTransferLength;
+			u32 valid_len = (msc->hbot.rx_data_len < req_len) ? msc->hbot.rx_data_len : req_len;
+
+			/* Safe even if the caller is abandoning the command: it does not return before the
+			   host task ends the command, see usbh_msc_xfer(). */
+			usb_os_memcpy((void *)pbuf, (const void *)msc->hbot.pbuf, valid_len);
+
+			if (valid_len < req_len) {
+				/* Short read: the block request is not fully satisfied, report it instead of
+				   silently returning partially filled sectors. */
+				RTK_LOGS(TAG, RTK_LOG_WARN, "Short rd %d/%d\n", valid_len, req_len);
+				status = RTK_FAIL;
+			}
+		}
+		break;
+
+	default:
+		break;
+	}
+
+	return status;
+
+}

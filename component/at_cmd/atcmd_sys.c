@@ -1,0 +1,491 @@
+/*
+ * Copyright (c) 2024 Realtek Semiconductor Corp.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include "sys_api.h"
+#include "ameba_rtos_version.h"
+#include "kv.h"
+#include "at_intf_spi.h"
+#include "at_intf_sdio.h"
+#include "at_intf_usbd.h"
+#include "ameba_ota.h"
+#include "gpio_api.h"
+
+#include "atcmd_service.h"
+#ifndef CONFIG_MP_SHRINK
+#include "atcmd_wifi.h"
+#ifdef CONFIG_WIFI_NAN_HOST_APP
+#include "atcmd_wifi_nan.h"
+#endif
+#include "atcmd_usb.h"
+#ifdef CONFIG_LWIP_LAYER
+#include "atcmd_mqtt.h"
+#include "atcmd_sockets.h"
+#include "atcmd_http.h"
+#include "atcmd_websocket.h"
+#include "atcmd_network.h"
+#endif
+#endif
+#if defined(CONFIG_BT) && CONFIG_BT
+#if defined(CONFIG_MP_INCLUDED) && CONFIG_MP_INCLUDED
+#include "atcmd_bt_mp.h"
+#endif
+#endif
+#ifndef CONFIG_MP_SHRINK
+#if defined(CONFIG_BT_COEXIST)
+#include "atcmd_coex.h"
+#endif
+#endif
+#include "atcmd_sys.h"
+#include "atcmd_sys_common.h"
+
+#include "FreeRTOS.h"
+#if (configGENERATE_RUN_TIME_STATS == 1)
+#include "task.h"
+#endif
+
+#ifdef CONFIG_ATCMD_HOST_CONTROL
+#include "at_intf_uart.h"
+#endif
+
+static const char *const TAG = "AT-SYS";
+
+#ifndef CONFIG_INIC_NO_FLASH
+
+/****************************************************************
+AT command process:
+    AT+OTACLEAR
+    Clear OTA signature.
+    [+OTACLEAR]: OK
+****************************************************************/
+void at_otaclear(u16 argc, char **argv)
+{
+	int ImgID = OTA_IMGID_APP;
+	if (argc > 1) {
+		ImgID = atoi((const char *)argv[1]);
+	}
+	if (ImgID >= OTA_IMGID_MAX) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "ImgID should < %d\r\n", OTA_IMGID_MAX);
+		return;
+	}
+	sys_clear_ota_signature(ImgID);
+	at_printf(ATCMD_OK_END_STR);
+}
+
+/****************************************************************
+AT command process:
+    AT+OTARECOVER
+    Recover OTA signature.
+    [+OTARECOVER]: OK
+****************************************************************/
+void at_otarecover(u16 argc, char **argv)
+{
+	int ImgID = OTA_IMGID_APP;
+	if (argc > 1) {
+		ImgID = atoi((const char *)argv[1]);
+	}
+	if (ImgID >= OTA_IMGID_MAX) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "ImgID should < %d\r\n", OTA_IMGID_MAX);
+		return;
+	}
+	sys_recover_ota_signature(ImgID);
+	at_printf(ATCMD_OK_END_STR);
+}
+
+#endif /* CONFIG_INIC_NO_FLASH */
+
+static void at_test_help(void)
+{
+	RTK_LOGS(TAG, RTK_LOG_INFO, "\r\n");
+	RTK_LOGS(TAG, RTK_LOG_INFO, "AT+test=<mode>,<string/length>\r\n");
+	RTK_LOGS(TAG, RTK_LOG_INFO, "\t<mode>:\t0-echo, 1-tt mode test\r\n");
+	RTK_LOGS(TAG, RTK_LOG_INFO, "\t<string/length>:\tstring-mode 0 echo string, length-tt mode length\r\n");
+}
+
+/****************************************************************
+AT command process:
+    AT+TEST
+    [+TEST]: OK
+****************************************************************/
+void at_test(u16 argc, char **argv)
+{
+	u8 *buffer = NULL;
+	u8 error_no = 0;
+	u32 start_time, end_time, tt_len;
+	int mode = 0;
+
+	if (argc == 1) {
+		goto end;
+	}
+
+	if (argc != 3) {
+		error_no = 1;
+		goto end;
+	}
+
+	mode = (int)atoi(argv[1]);
+
+	if (mode == 0) {
+		at_printf("\r\n arg len = %d \r\n", strlen((char *)argv[2]));
+		at_printf("\r\n arg = %s \r\n", (char *)argv[2]);
+	} else if (mode == 1) {
+		buffer = (u8 *)rtos_mem_malloc(10 * 1024);
+		if (buffer == NULL) {
+			error_no = 2;
+			goto end;
+		}
+
+		tt_len = (u32)atoi(argv[2]);
+
+		if (atcmd_tt_mode_start(tt_len) != 0) {
+			error_no = 2;
+			goto end;
+		}
+
+		u8 *buffer_ptr = buffer;
+		int get_len = 0, remain_len = tt_len;
+
+		get_len = atcmd_tt_mode_get(buffer_ptr, 1);
+		remain_len -= get_len;
+		start_time = rtos_time_get_current_system_time_ms();
+
+		while (remain_len > 0) {
+			get_len = atcmd_tt_mode_get(buffer_ptr, remain_len);
+			if (get_len == 0) {
+				RTK_LOGS(TAG, RTK_LOG_INFO, "host stops tt mode\r\n");
+				break;
+			}
+			remain_len -= get_len;
+		}
+
+		end_time = rtos_time_get_current_system_time_ms();
+		atcmd_tt_mode_end();
+
+		at_printf("upstream test(tt mode): Send %d KBytes in %d ms, %d Kbits/sec\n\r", (int)((tt_len - remain_len) / 1024), (int)(end_time - start_time),
+				  (int)(((tt_len - remain_len) * 8) / (end_time - start_time)));
+	} else if (mode == 2) {
+		u32 at_len = (u32)atoi(argv[2]);
+		u32 send_len = 0;
+#ifdef CONFIG_ATCMD_HOST_CONTROL
+		/* Same buffer for every transport: at_intf_*.c fragment as needed. */
+		u32 malloc_size = ATCMD_DATA_REPORT_CHUNK;
+#else
+		u32 malloc_size = 256;
+#endif
+
+		buffer = (u8 *)rtos_mem_malloc(malloc_size);
+		memset(buffer, 1, malloc_size);
+		at_printf(ATCMD_DOWNSTREAM_TEST_START_STR);
+		while (at_len > 0) {
+			send_len = at_len > malloc_size ? malloc_size : at_len;
+			at_printf_data((char *)buffer, send_len);
+			at_len -= send_len;
+		}
+		at_printf(ATCMD_DOWNSTREAM_TEST_END_STR);
+	} else {
+		error_no = 1;
+		goto end;
+	}
+
+end:
+	if (buffer != NULL) {
+		rtos_mem_free(buffer);
+	}
+
+	if (error_no == 0) {
+		at_printf(ATCMD_OK_END_STR);
+	} else {
+		at_printf(ATCMD_ERROR_END_STR, error_no);
+		at_test_help();
+	}
+}
+
+/****************************************************************
+AT command process:
+    AT+LIST
+    Common AT Command:
+    Then pending all the AT common commands supported.
+    Wi-Fi AT Command:
+    Then pending all the Wi-Fi common commands supported.
+    ......
+    [+LIST]:OK
+****************************************************************/
+void at_list(u16 argc, char **argv)
+{
+	UNUSED(argc);
+	UNUSED(argv);
+
+	/* System commands. */
+	at_printf("Common AT Command:\r\n");
+	print_system_common_at();
+
+	/* System ap commands. */
+	at_printf("AP Common AT Command:\r\n");
+	print_system_at();
+
+#ifndef CONFIG_MP_SHRINK
+#ifdef CONFIG_WLAN
+	/* Wifi commands. */
+	at_printf("Wi-Fi AT Command:\r\n");
+	print_wifi_at();
+#ifdef CONFIG_WIFI_NAN_HOST_APP
+	/* Wi-Fi Aware (NAN) commands. */
+	at_printf("Wi-Fi Aware (NAN) AT Command:\r\n");
+	print_nan_at();
+#endif
+#ifdef CONFIG_LWIP_LAYER
+#if defined(CONFIG_ATCMD_SOCKET) && (CONFIG_ATCMD_SOCKET == 1)
+	/* Socket AT Commands. */
+	at_printf("Socket AT Commands:\r\n");
+	print_socket_at();
+#endif
+#if defined(CONFIG_ATCMD_HTTP) && (CONFIG_ATCMD_HTTP == 1)
+	/* HTTP commands. */
+	at_printf("HTTP AT Command:\r\n");
+	print_http_at();
+#endif
+#if defined(CONFIG_ATCMD_WEBSOCKET) && (CONFIG_ATCMD_WEBSOCKET == 1)
+	/* WEBSOCKET commands. */
+	at_printf("WEBSOCKET AT command:\r\n");
+	print_websocket_at();
+#endif
+#if defined(CONFIG_ATCMD_NETWORK) && (CONFIG_ATCMD_NETWORK == 1)
+	/* NETWORK commands. */
+	at_printf("NETWORK AT command:\r\n");
+	print_network_at();
+#endif
+#if defined(CONFIG_ATCMD_MQTT) && (CONFIG_ATCMD_MQTT == 1)
+	/* MQTT commands. */
+	at_printf("MQTT AT command:\r\n");
+	print_mqtt_at();
+#endif
+#endif // CONFIG_LWIP_LAYER
+#endif // CONFIG_WLAN
+#if defined(CONFIG_USB_HOST_EN) || defined(CONFIG_USB_DEVICE_EN)
+	/* USB commands. */
+	print_usb_at();
+#endif /* CONFIG_USB_HOST_EN || CONFIG_USB_DEVICE_EN */
+#endif // CONFIG_MP_SHRINK
+
+#if defined(CONFIG_BT) && CONFIG_BT
+	/* Bluetooth commands. */
+	at_printf("BT AT command:\r\n");
+	print_bt_ext_at();
+#if defined(CONFIG_MP_INCLUDED) && CONFIG_MP_INCLUDED
+	print_bt_mp_at();
+#endif
+#endif
+
+#ifndef CONFIG_MP_SHRINK
+#if defined(CONFIG_BT_COEXIST)
+	/* COEX commands. */
+	at_printf("COEX AT command:\r\n");
+	print_coex_at();
+#endif
+#endif
+
+	at_printf(ATCMD_OK_END_STR);
+}
+
+#ifdef CONFIG_MP_INCLUDED
+void at_gpiotest(u16 argc, char **argv)
+{
+	u8 error_no = 0;
+	u8 output_pin, input_pin, val_w, val_r;
+	gpio_t gpio_output, gpio_input;
+
+	if (argc != 4) {
+		error_no = 1;
+		goto end;
+	}
+
+	if (strstr(argv[1], "PA")) {
+		output_pin = _PA_0 + atoi(&argv[1][2]);
+	} else if (strstr(argv[1], "PB")) {
+		output_pin = _PB_0 + atoi(&argv[1][2]);
+	}
+#ifdef _PC_0
+	else if (strstr(argv[1], "PC")) {
+		output_pin = _PC_0 + atoi(&argv[1][2]);
+	}
+#endif
+	else {
+		error_no = 2;
+		goto end;
+	}
+
+	val_w = atoi(argv[2]);
+	if (val_w > 1) {
+		error_no = 2;
+		goto end;
+	}
+
+	if (strstr(argv[3], "PA")) {
+		input_pin = _PA_0 + atoi(&argv[3][2]);
+	} else if (strstr(argv[3], "PB")) {
+		input_pin = _PB_0 + atoi(&argv[3][2]);
+	}
+#ifdef _PC_0
+	else if (strstr(argv[3], "PC")) {
+		input_pin = _PC_0 + atoi(&argv[3][2]);
+	}
+#endif
+	else {
+		error_no = 2;
+		goto end;
+	}
+
+	gpio_init(&gpio_input, input_pin);
+	gpio_dir(&gpio_input, PIN_INPUT);
+	gpio_mode(&gpio_input, PullNone);
+
+	gpio_init(&gpio_output, output_pin);
+	gpio_dir(&gpio_output, PIN_OUTPUT);
+	gpio_mode(&gpio_output, PullNone);
+
+	gpio_write(&gpio_output, val_w);
+	val_r = gpio_read(&gpio_input);
+	if (val_w != val_r) {
+		error_no = 3;
+		goto end;
+	}
+
+end:
+	if (error_no == 0) {
+		RTK_LOGS(TAG, RTK_LOG_INFO, ATCMD_OK_END_STR);
+	} else {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, ATCMD_ERROR_END_STR, error_no);
+	}
+}
+
+void at_gpiostatus(u16 argc, char **argv)
+{
+	u8 error_no = 0;
+	u8 input_pin;
+	gpio_t gpio_input;
+	int sta;
+	PinMode mode;
+
+	if (argc != 3) {
+		error_no = 1;
+		goto end;
+	}
+
+	if (strstr(argv[1], "PA")) {
+		input_pin = _PA_0 + atoi(&argv[1][2]);
+	} else if (strstr(argv[1], "PB")) {
+		input_pin = _PB_0 + atoi(&argv[1][2]);
+	}
+#ifdef _PC_0
+	else if (strstr(argv[1], "PC")) {
+		input_pin = _PC_0 + atoi(&argv[1][2]);
+	}
+#endif
+	else {
+		error_no = 2;
+		goto end;
+	}
+
+	sta = atoi(argv[2]);
+	switch (sta) {
+	case -1:
+		mode = PullDown;
+		break;
+	case  0:
+		mode = PullNone;
+		break;
+	case  1:
+		mode = PullUp;
+		break;
+	default:
+		error_no = 2;
+		goto end;
+		break;
+	}
+
+	/*this configuration will be hold during mp test*/
+	sys_jtag_off();
+
+	gpio_init(&gpio_input, input_pin);
+	gpio_dir(&gpio_input, PIN_INPUT);
+	gpio_mode(&gpio_input, mode);
+
+end:
+	if (error_no == 0) {
+		RTK_LOGS(TAG, RTK_LOG_INFO, ATCMD_OK_END_STR);
+	} else {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, ATCMD_ERROR_END_STR, error_no);
+	}
+
+}
+#endif
+
+
+#ifdef CONFIG_ATCMD_HOST_CONTROL
+/****************************************************************
+AT command process:
+	AT+UART
+	+UART:<store in flash>,<baudrate>
+	[+UART]: OK
+****************************************************************/
+void at_uart(u16 argc, char **argv)
+{
+	u8 error_no = 0;
+	int mode = 0, baudrate = 0;
+
+	if (argc != 3) {
+		error_no = 1;
+		goto end;
+	}
+
+	mode = (int)atoi(argv[1]);
+	baudrate = (int)atoi(argv[2]);
+
+	if (baudrate >= 4800 && baudrate <= 6000000) {
+		if (mode == 1) {
+			rt_kv_set("atcmd_uart_baudrate", (uint8_t *) &baudrate, 4);
+		}
+		UART_SetBaud(UART_DEV, baudrate);
+	} else {
+		error_no = 1;
+	}
+
+end:
+
+	if (error_no == 0) {
+		at_printf(ATCMD_OK_END_STR);
+	} else {
+		at_printf(ATCMD_ERROR_END_STR, error_no);
+	}
+}
+#endif
+
+ATCMD_APONLY_TABLE_DATA_SECTION
+const log_item_t at_sys_items[] = {
+#ifndef CONFIG_INIC_NO_FLASH
+	{"+OTACLEAR", at_otaclear},
+	{"+OTARECOVER", at_otarecover},
+#endif
+	{"+TEST", at_test},
+	{"+LIST", at_list},
+#ifdef CONFIG_MP_INCLUDED
+	{"+GPIOTEST", at_gpiotest},
+	{"+GPIOSTATUS", at_gpiostatus},
+#endif
+#ifdef CONFIG_ATCMD_HOST_CONTROL
+	{"+UART", at_uart},
+#endif
+};
+
+void print_system_at(void)
+{
+	int index;
+	int cmd_len = 0;
+
+	cmd_len = sizeof(at_sys_items) / sizeof(at_sys_items[0]);
+	for (index = 0; index < cmd_len; index++) {
+		at_printf("AT%s\r\n", at_sys_items[index].log_cmd);
+	}
+}

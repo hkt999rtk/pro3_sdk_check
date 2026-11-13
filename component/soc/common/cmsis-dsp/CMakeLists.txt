@@ -1,0 +1,131 @@
+##########################################################################################
+## * This part defines public part of the component
+## * Public part will be used as global build configures for all component
+
+set(public_includes)                #public include directories, NOTE: relative path is OK
+set(public_definitions)             #public definitions
+set(public_libraries)               #public libraries(files), NOTE: linked with whole-archive options
+
+#----------------------------------------#
+# Component public part, user config begin
+
+# You may use if-else condition to set or update predefined variable above
+
+ameba_list_append(public_includes
+    Include
+)
+
+#FIXME: miss role for public_libraries
+
+# Component public part, user config end
+#----------------------------------------#
+
+#WARNING: Fixed section, DO NOT change!
+ameba_global_include(${public_includes})
+ameba_global_define(${public_definitions})
+ameba_global_library(${public_libraries}) #default: whole-archived
+
+##########################################################################################
+## * This part defines private part of the component
+## * Private part is used to build target of current component
+## * NOTE: The build API guarantees the global build configures(mentioned above)
+## *       applied to the target automatically. So if any configure was already added
+## *       to public above, it's unnecessary to add again below.
+
+#NOTE: User defined section, add your private build configures here
+# You may use if-else condition to set these predefined variable
+# They are only for ameba_add_internal_library/ameba_add_external_app_library/ameba_add_external_soc_library
+set(private_sources)                 #private source files, NOTE: relative path is OK
+set(private_includes)                #private include directories, NOTE: relative path is OK
+set(private_definitions)             #private definitions
+set(private_compile_options)         #private compile_options
+
+#------------------------------#
+# Component private part, user config begin
+
+ameba_list_append(private_includes
+    PrivateInclude
+)
+
+# Fix compilation error: the ARM_MATH_DSP check in component/soc/common/cmsis-dsp/Source/FilteringFunctions/arm_conv_partial_q7.c uses #if ARM_MATH_DSP, not #ifdef ARM_MATH_DSP. 
+ameba_list_append(private_compile_options
+    -Wno-undef
+)
+
+if(${c_CURRENT_IMAGE_IS_ROM})
+    ameba_list_append(private_sources
+        rom/ameba_faac_tables.c
+    )
+else()
+    ameba_list_append(private_sources
+        Source/BasicMathFunctions/BasicMathFunctions.c
+        Source/BayesFunctions/BayesFunctions.c
+        Source/CommonTables/CommonTables.c
+        Source/ComplexMathFunctions/ComplexMathFunctions.c
+        Source/ControllerFunctions/ControllerFunctions.c
+        Source/DistanceFunctions/DistanceFunctions.c
+        Source/FastMathFunctions/FastMathFunctions.c
+        Source/FilteringFunctions/FilteringFunctions.c
+        Source/MatrixFunctions/MatrixFunctions.c
+        Source/StatisticsFunctions/StatisticsFunctions.c
+        Source/SupportFunctions/SupportFunctions.c
+        Source/SVMFunctions/SVMFunctions.c
+        Source/TransformFunctions/TransformFunctions.c
+        Source/TransformFunctions/arm_bitreversal2.S
+        Source/InterpolationFunctions/InterpolationFunctions.c
+        Source/QuaternionMathFunctions/QuaternionMathFunctions.c
+        Source/WindowFunctions/WindowFunctions.c
+    )
+endif()
+
+# Optional Neon build for CA32 (Ne10 FFT etc). Off by default: with ARM_MATH_NEON the FFT instance
+# structures and arm_rfft_fast_f32()/arm_cfft_f32() signatures change, so every caller (including
+# prebuilt libraries) must be rebuilt against these headers. Enable with: build.py -D CMSIS_DSP_NEON=ON
+if(CMSIS_DSP_NEON AND "${c_MCU_TYPE}" STREQUAL "ca32" AND NOT ${c_CURRENT_IMAGE_IS_ROM})
+    ameba_list_append(private_sources
+        ComputeLibrary/Source/arm_cl_tables.c
+        Source/CommonTables/arm_neon_tables.c
+        Ne10/NE10_fft_float32.neonintrinsic.c
+        Ne10/NE10_fft_int32.neonintrinsic.c
+        Ne10/NE10_fft_int16.neonintrinsic.c
+        Ne10/NE10_rfft_float32.neonintrinsic.c
+        Ne10/CMSIS_NE10_fft_init.c
+        Ne10/CMSIS_NE10_fft_generic_float32.neonintrisic.c
+        Ne10/CMSIS_NE10_fft_generic_int32.neonintrisic.c
+    )
+    ameba_list_append(private_includes
+        Ne10
+    )
+    ameba_list_append(private_definitions
+        CMSIS_NE10_DSP_RIFFT_SCALING
+    )
+    ameba_list_append(private_compile_options
+        -flax-vector-conversions
+    )
+    # ARM_MATH_NEON changes public headers, so it must be seen by every user of arm_math.h
+    ameba_global_define(ARM_MATH_NEON)
+    ameba_global_include(${CMAKE_CURRENT_SOURCE_DIR}/ComputeLibrary/Include)
+endif()
+
+# Component private part, user config end
+#------------------------------#
+
+#WARNING: Select right API based on your component's release/not-release/standalone
+
+###NOTE: For closed-source component, only build before release and libs are packaged into lib/application
+###NOTE: For open-source component, always build from source
+ameba_add_internal_library(cmsis_dsp
+    p_SOURCES
+        ${private_sources}
+    p_INCLUDES
+        ${private_includes}
+    p_DEFINITIONS
+        ${private_definitions}
+    p_COMPILE_OPTIONS
+        ${private_compile_options}
+)
+
+if(${c_CURRENT_IMAGE_IS_ROM})
+    ameba_library_section_rename(${c_CURRENT_TARGET_NAME} p_TO_ROM)
+endif()
+##########################################################################################

@@ -1,0 +1,53 @@
+
+//tool_version:1.4.35
+
+#ifndef _MCROP_H_INC_
+#define _MCROP_H_INC_
+
+#include <isp_reg.h>
+#include <isp_reg_base.h>
+
+#define MCROP_START_X (MCROP_BASE_ADDR + 0x00000000) //0x00005400
+#define MCROP_START_Y (MCROP_BASE_ADDR + 0x00000004) //0x00005404
+#define MCROP_FRAME_WIDTH (MCROP_BASE_ADDR + 0x00000008) //0x00005408
+#define MCROP_FRAME_HEIGHT (MCROP_BASE_ADDR + 0x0000000c) //0x0000540c
+#define MCROP_SYNC (MCROP_BASE_ADDR + 0x00000010) //0x00005410
+#define MCROP_DUMMY_PIXEL (MCROP_BASE_ADDR + 0x00000014) //0x00005414
+
+/* Bits of MCROP_START_X (0x00000000) */
+
+#define BLC_START_X_OFFSET 0
+#define BLC_START_X_BITS 16
+#define BLC_START_X_MASK (((1 << 16) - 1) << 0)
+
+/* Bits of MCROP_START_Y (0x00000004) */
+
+#define BLC_START_Y_OFFSET 0
+#define BLC_START_Y_BITS 16
+#define BLC_START_Y_MASK (((1 << 16) - 1) << 0)
+
+/* Bits of MCROP_FRAME_WIDTH (0x00000008) */
+
+#define FRAME_WIDTH_OFFSET 0
+#define FRAME_WIDTH_BITS 16
+#define FRAME_WIDTH_MASK (((1 << 16) - 1) << 0)
+
+/* Bits of MCROP_FRAME_HEIGHT (0x0000000c) */
+
+#define FRAME_HEIGHT_OFFSET 0
+#define FRAME_HEIGHT_BITS 16
+#define FRAME_HEIGHT_MASK (((1 << 16) - 1) << 0)
+
+/* Bits of MCROP_SYNC (0x00000010) */
+
+#define CROP_REG_LOAD_OFFSET 0
+#define CROP_REG_LOAD_BITS 1
+#define CROP_REG_LOAD_MASK (((1 << 1) - 1) << 0)
+
+/* Bits of MCROP_DUMMY_PIXEL (0x00000014) */
+
+#define DUMMY_PIXEL_OFFSET 0
+#define DUMMY_PIXEL_BITS 16
+#define DUMMY_PIXEL_MASK (((1 << 16) - 1) << 0)
+
+#endif /* _MCROP_H_INC_ */

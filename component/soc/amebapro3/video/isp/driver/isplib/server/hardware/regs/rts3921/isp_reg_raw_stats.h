@@ -1,0 +1,486 @@
+
+//tool_version:1.4.35
+
+#ifndef _RAW_STATS_H_INC_
+#define _RAW_STATS_H_INC_
+
+#include <isp_reg.h>
+#include <isp_reg_base.h>
+
+#define RAW_STATIS_CTRL (RAW_STATS_BASE_ADDR + 0x00000000) //0x00006400
+#define RAW_FINE_TUNE_GAIN (RAW_STATS_BASE_ADDR + 0x00000004) //0x00006404
+#define RAW_WIN_START (RAW_STATS_BASE_ADDR + 0x00000008) //0x00006408
+#define RAW_WIN_SIZE (RAW_STATS_BASE_ADDR + 0x0000000c) //0x0000640c
+#define RAW_BRIGHT_COEF (RAW_STATS_BASE_ADDR + 0x00000010) //0x00006410
+#define RAW_WIN_LIMIT_ENABLE (RAW_STATS_BASE_ADDR + 0x00000014) //0x00006414
+#define RAW_WIN_BRIGHT_THD (RAW_STATS_BASE_ADDR + 0x00000018) //0x00006418
+#define RAW_WIN_R_THD (RAW_STATS_BASE_ADDR + 0x0000001c) //0x0000641c
+#define RAW_WIN_G_THD (RAW_STATS_BASE_ADDR + 0x00000020) //0x00006420
+#define RAW_WIN_B_THD (RAW_STATS_BASE_ADDR + 0x00000024) //0x00006424
+#define RAW_WIN_RG_THD (RAW_STATS_BASE_ADDR + 0x00000028) //0x00006428
+#define RAW_WIN_BG_THD (RAW_STATS_BASE_ADDR + 0x0000002c) //0x0000642c
+#define RAW_RGBC_K1 (RAW_STATS_BASE_ADDR + 0x00000030) //0x00006430
+#define RAW_RGBC_C1 (RAW_STATS_BASE_ADDR + 0x00000034) //0x00006434
+#define RAW_FINE_RG_THD (RAW_STATS_BASE_ADDR + 0x00000038) //0x00006438
+#define RAW_FINE_BG_THD (RAW_STATS_BASE_ADDR + 0x0000003c) //0x0000643c
+#define RAW_FINE_BRIGHT_THD (RAW_STATS_BASE_ADDR + 0x00000040) //0x00006440
+#define RAW_FINE_WP_NUM (RAW_STATS_BASE_ADDR + 0x00000044) //0x00006444
+#define RAW_FINE_SUM_R (RAW_STATS_BASE_ADDR + 0x00000048) //0x00006448
+#define RAW_FINE_SUM_G (RAW_STATS_BASE_ADDR + 0x0000004c) //0x0000644c
+#define RAW_FINE_SUM_B (RAW_STATS_BASE_ADDR + 0x00000050) //0x00006450
+#define RAW_FINE_DIV (RAW_STATS_BASE_ADDR + 0x00000054) //0x00006454
+#define RAW_ROUGH_RG_THD (RAW_STATS_BASE_ADDR + 0x00000058) //0x00006458
+#define RAW_ROUGH_BG_THD (RAW_STATS_BASE_ADDR + 0x0000005c) //0x0000645c
+#define RAW_ROUGH_BRIGHT_THD (RAW_STATS_BASE_ADDR + 0x00000060) //0x00006460
+#define RAW_ROUGH_GAIN_R_1 (RAW_STATS_BASE_ADDR + 0x00000064) //0x00006464
+#define RAW_ROUGH_GAIN_R_2 (RAW_STATS_BASE_ADDR + 0x00000068) //0x00006468
+#define RAW_ROUGH_GAIN_R_3 (RAW_STATS_BASE_ADDR + 0x0000006c) //0x0000646c
+#define RAW_ROUGH_GAIN_B_1 (RAW_STATS_BASE_ADDR + 0x00000070) //0x00006470
+#define RAW_ROUGH_GAIN_B_2 (RAW_STATS_BASE_ADDR + 0x00000074) //0x00006474
+#define RAW_ROUGH_GAIN_B_3 (RAW_STATS_BASE_ADDR + 0x00000078) //0x00006478
+#define RAW_WP_NUM1 (RAW_STATS_BASE_ADDR + 0x0000007c) //0x0000647c
+#define RAW_WP_NUM2 (RAW_STATS_BASE_ADDR + 0x00000080) //0x00006480
+#define RAW_WP_NUM3 (RAW_STATS_BASE_ADDR + 0x00000084) //0x00006484
+#define RAW_WP_NUM4 (RAW_STATS_BASE_ADDR + 0x00000088) //0x00006488
+#define RAW_WP_NUM5 (RAW_STATS_BASE_ADDR + 0x0000008c) //0x0000648c
+#define RAW_WP_NUM6 (RAW_STATS_BASE_ADDR + 0x00000090) //0x00006490
+#define RAW_WIN_STATIS_ADDR (RAW_STATS_BASE_ADDR + 0x00000094) //0x00006494
+#define RAW_WIN_STATIS_PIXEL_NUM (RAW_STATS_BASE_ADDR + 0x00000098) //0x00006498
+#define RAW_WIN_BG_RG_MEAN_DIV (RAW_STATS_BASE_ADDR + 0x0000009c) //0x0000649c
+#define RAW_WIN_MEAN0 (RAW_STATS_BASE_ADDR + 0x000000a0) //0x000064a0
+#define RAW_WIN_MEAN1 (RAW_STATS_BASE_ADDR + 0x000000a4) //0x000064a4
+#define RAW_WIN_R_SUM (RAW_STATS_BASE_ADDR + 0x000000a8) //0x000064a8
+#define RAW_WIN_G_SUM (RAW_STATS_BASE_ADDR + 0x000000ac) //0x000064ac
+#define RAW_WIN_B_SUM (RAW_STATS_BASE_ADDR + 0x000000b0) //0x000064b0
+
+/* Bits of RAW_STATIS_CTRL (0x00000000) */
+
+#define CSYS_MODE_OFFSET 0
+#define CSYS_MODE_BITS 1
+#define CSYS_MODE_MASK (((1 << 1) - 1) << 0)
+
+#define STATS_MODE_OFFSET 1
+#define STATS_MODE_BITS 1
+#define STATS_MODE_MASK (((1 << 1) - 1) << 1)
+
+#define FINE_EN_OFFSET 2
+#define FINE_EN_BITS 1
+#define FINE_EN_MASK (((1 << 1) - 1) << 2)
+
+#define ROUGH_EN_OFFSET 3
+#define ROUGH_EN_BITS 1
+#define ROUGH_EN_MASK (((1 << 1) - 1) << 3)
+
+#define STATS_NUM_MODE_OFFSET 4
+#define STATS_NUM_MODE_BITS 1
+#define STATS_NUM_MODE_MASK (((1 << 1) - 1) << 4)
+
+#define RAW_STOP_OFFSET 5
+#define RAW_STOP_BITS 1
+#define RAW_STOP_MASK (((1 << 1) - 1) << 5)
+
+#define RAW_START_OFFSET 6
+#define RAW_START_BITS 1
+#define RAW_START_MASK (((1 << 1) - 1) << 6)
+
+#define RAW_MODE_OFFSET 8
+#define RAW_MODE_BITS 2
+#define RAW_MODE_MASK (((1 << 2) - 1) << 8)
+
+/* Bits of RAW_FINE_TUNE_GAIN (0x00000004) */
+
+#define GAIN_R_FINE_OFFSET 0
+#define GAIN_R_FINE_BITS 11
+#define GAIN_R_FINE_MASK (((1 << 11) - 1) << 0)
+
+#define GAIN_B_FINE_OFFSET 16
+#define GAIN_B_FINE_BITS 11
+#define GAIN_B_FINE_MASK (((1 << 11) - 1) << 16)
+
+/* Bits of RAW_WIN_START (0x00000008) */
+
+#define RAW_START_X_OFFSET 0
+#define RAW_START_X_BITS 16
+#define RAW_START_X_MASK (((1 << 16) - 1) << 0)
+
+#define RAW_START_Y_OFFSET 16
+#define RAW_START_Y_BITS 16
+#define RAW_START_Y_MASK (((1 << 16) - 1) << 16)
+
+/* Bits of RAW_WIN_SIZE (0x0000000c) */
+
+#define WIN_WIDTH_OFFSET 0
+#define WIN_WIDTH_BITS 8
+#define WIN_WIDTH_MASK (((1 << 8) - 1) << 0)
+
+#define WIN_HEIGHT_OFFSET 8
+#define WIN_HEIGHT_BITS 8
+#define WIN_HEIGHT_MASK (((1 << 8) - 1) << 8)
+
+/* Bits of RAW_BRIGHT_COEF (0x00000010) */
+
+#define COEF_BRIGHT_R_OFFSET 0
+#define COEF_BRIGHT_R_BITS 4
+#define COEF_BRIGHT_R_MASK (((1 << 4) - 1) << 0)
+
+#define COEF_BRIGHT_G_OFFSET 4
+#define COEF_BRIGHT_G_BITS 4
+#define COEF_BRIGHT_G_MASK (((1 << 4) - 1) << 4)
+
+#define COEF_BRIGHT_B_OFFSET 8
+#define COEF_BRIGHT_B_BITS 4
+#define COEF_BRIGHT_B_MASK (((1 << 4) - 1) << 8)
+
+#define COEF_GR_OFFSET 24
+#define COEF_GR_BITS 2
+#define COEF_GR_MASK (((1 << 2) - 1) << 24)
+
+#define COEF_GB_OFFSET 28
+#define COEF_GB_BITS 2
+#define COEF_GB_MASK (((1 << 2) - 1) << 28)
+
+/* Bits of RAW_WIN_LIMIT_ENABLE (0x00000014) */
+
+#define WIN_RANGE_EN_OFFSET 0
+#define WIN_RANGE_EN_BITS 1
+#define WIN_RANGE_EN_MASK (((1 << 1) - 1) << 0)
+
+#define WIN_RATIO_EN_OFFSET 1
+#define WIN_RATIO_EN_BITS 1
+#define WIN_RATIO_EN_MASK (((1 << 1) - 1) << 1)
+
+#define WIN_BGRG_EN_OFFSET 2
+#define WIN_BGRG_EN_BITS 1
+#define WIN_BGRG_EN_MASK (((1 << 1) - 1) << 2)
+
+/* Bits of RAW_WIN_BRIGHT_THD (0x00000018) */
+
+#define MAX_BRIGHT_WIN_OFFSET 0
+#define MAX_BRIGHT_WIN_BITS 12
+#define MAX_BRIGHT_WIN_MASK (((1 << 12) - 1) << 0)
+
+#define MIN_BRIGHT_WIN_OFFSET 16
+#define MIN_BRIGHT_WIN_BITS 12
+#define MIN_BRIGHT_WIN_MASK (((1 << 12) - 1) << 16)
+
+/* Bits of RAW_WIN_R_THD (0x0000001c) */
+
+#define MAX_R_WIN_OFFSET 0
+#define MAX_R_WIN_BITS 12
+#define MAX_R_WIN_MASK (((1 << 12) - 1) << 0)
+
+#define MIN_R_WIN_OFFSET 16
+#define MIN_R_WIN_BITS 12
+#define MIN_R_WIN_MASK (((1 << 12) - 1) << 16)
+
+/* Bits of RAW_WIN_G_THD (0x00000020) */
+
+#define MAX_G_WIN_OFFSET 0
+#define MAX_G_WIN_BITS 12
+#define MAX_G_WIN_MASK (((1 << 12) - 1) << 0)
+
+#define MIN_G_WIN_OFFSET 16
+#define MIN_G_WIN_BITS 12
+#define MIN_G_WIN_MASK (((1 << 12) - 1) << 16)
+
+/* Bits of RAW_WIN_B_THD (0x00000024) */
+
+#define MAX_B_WIN_OFFSET 0
+#define MAX_B_WIN_BITS 12
+#define MAX_B_WIN_MASK (((1 << 12) - 1) << 0)
+
+#define MIN_B_WIN_OFFSET 16
+#define MIN_B_WIN_BITS 12
+#define MIN_B_WIN_MASK (((1 << 12) - 1) << 16)
+
+/* Bits of RAW_WIN_RG_THD (0x00000028) */
+
+#define MAX_R_G_WIN_OFFSET 0
+#define MAX_R_G_WIN_BITS 11
+#define MAX_R_G_WIN_MASK (((1 << 11) - 1) << 0)
+
+#define MIN_R_G_WIN_OFFSET 16
+#define MIN_R_G_WIN_BITS 11
+#define MIN_R_G_WIN_MASK (((1 << 11) - 1) << 16)
+
+/* Bits of RAW_WIN_BG_THD (0x0000002c) */
+
+#define MAX_B_G_WIN_OFFSET 0
+#define MAX_B_G_WIN_BITS 11
+#define MAX_B_G_WIN_MASK (((1 << 11) - 1) << 0)
+
+#define MIN_B_G_WIN_OFFSET 16
+#define MIN_B_G_WIN_BITS 11
+#define MIN_B_G_WIN_MASK (((1 << 11) - 1) << 16)
+
+/* Bits of RAW_RGBC_K1 (0x00000030) */
+
+#define WIN_K1_OFFSET 0
+#define WIN_K1_BITS 11
+#define WIN_K1_MASK (((1 << 11) - 1) << 0)
+
+#define WIN_K2_OFFSET 16
+#define WIN_K2_BITS 11
+#define WIN_K2_MASK (((1 << 11) - 1) << 16)
+
+/* Bits of RAW_RGBC_C1 (0x00000034) */
+
+#define WIN_C1_OFFSET 0
+#define WIN_C1_BITS 16
+#define WIN_C1_MASK (((1 << 16) - 1) << 0)
+
+#define WIN_C2_OFFSET 16
+#define WIN_C2_BITS 16
+#define WIN_C2_MASK (((1 << 16) - 1) << 16)
+
+/* Bits of RAW_FINE_RG_THD (0x00000038) */
+
+#define MAX_R_G_FINE_OFFSET 0
+#define MAX_R_G_FINE_BITS 11
+#define MAX_R_G_FINE_MASK (((1 << 11) - 1) << 0)
+
+#define MIN_R_G_FINE_OFFSET 16
+#define MIN_R_G_FINE_BITS 11
+#define MIN_R_G_FINE_MASK (((1 << 11) - 1) << 16)
+
+/* Bits of RAW_FINE_BG_THD (0x0000003c) */
+
+#define MAX_B_G_FINE_OFFSET 0
+#define MAX_B_G_FINE_BITS 11
+#define MAX_B_G_FINE_MASK (((1 << 11) - 1) << 0)
+
+#define MIN_B_G_FINE_OFFSET 16
+#define MIN_B_G_FINE_BITS 11
+#define MIN_B_G_FINE_MASK (((1 << 11) - 1) << 16)
+
+/* Bits of RAW_FINE_BRIGHT_THD (0x00000040) */
+
+#define MAX_BRIGHT_FINE_OFFSET 0
+#define MAX_BRIGHT_FINE_BITS 12
+#define MAX_BRIGHT_FINE_MASK (((1 << 12) - 1) << 0)
+
+#define MIN_BRIGHT_FINE_OFFSET 16
+#define MIN_BRIGHT_FINE_BITS 12
+#define MIN_BRIGHT_FINE_MASK (((1 << 12) - 1) << 16)
+
+/* Bits of RAW_FINE_WP_NUM (0x00000044) */
+
+#define WP_NUM_FINE_OFFSET 0
+#define WP_NUM_FINE_BITS 21
+#define WP_NUM_FINE_MASK (((1 << 21) - 1) << 0)
+
+/* Bits of RAW_FINE_SUM_R (0x00000048) */
+
+#define SUM_R_WP_FINE_OFFSET 0
+#define SUM_R_WP_FINE_BITS 32
+#define SUM_R_WP_FINE_MASK (((1 << 32) - 1) << 0)
+
+/* Bits of RAW_FINE_SUM_G (0x0000004c) */
+
+#define SUM_G_WP_FINE_OFFSET 0
+#define SUM_G_WP_FINE_BITS 32
+#define SUM_G_WP_FINE_MASK (((1 << 32) - 1) << 0)
+
+/* Bits of RAW_FINE_SUM_B (0x00000050) */
+
+#define SUM_B_WP_FINE_OFFSET 0
+#define SUM_B_WP_FINE_BITS 32
+#define SUM_B_WP_FINE_MASK (((1 << 32) - 1) << 0)
+
+/* Bits of RAW_FINE_DIV (0x00000054) */
+
+#define GAIN_FINE1_OFFSET 0
+#define GAIN_FINE1_BITS 16
+#define GAIN_FINE1_MASK (((1 << 16) - 1) << 0)
+
+#define GAIN_FINE2_OFFSET 16
+#define GAIN_FINE2_BITS 16
+#define GAIN_FINE2_MASK (((1 << 16) - 1) << 16)
+
+/* Bits of RAW_ROUGH_RG_THD (0x00000058) */
+
+#define MAX_RG_ROUGH_OFFSET 0
+#define MAX_RG_ROUGH_BITS 11
+#define MAX_RG_ROUGH_MASK (((1 << 11) - 1) << 0)
+
+#define MIN_RG_ROUGH_OFFSET 16
+#define MIN_RG_ROUGH_BITS 11
+#define MIN_RG_ROUGH_MASK (((1 << 11) - 1) << 16)
+
+/* Bits of RAW_ROUGH_BG_THD (0x0000005c) */
+
+#define MAX_BG_ROUGH_OFFSET 0
+#define MAX_BG_ROUGH_BITS 11
+#define MAX_BG_ROUGH_MASK (((1 << 11) - 1) << 0)
+
+#define MIN_BG_ROUGH_OFFSET 16
+#define MIN_BG_ROUGH_BITS 11
+#define MIN_BG_ROUGH_MASK (((1 << 11) - 1) << 16)
+
+/* Bits of RAW_ROUGH_BRIGHT_THD (0x00000060) */
+
+#define MAX_BRIGHT_ROUGH_OFFSET 0
+#define MAX_BRIGHT_ROUGH_BITS 12
+#define MAX_BRIGHT_ROUGH_MASK (((1 << 12) - 1) << 0)
+
+#define MIN_BRIGHT_ROUGH_OFFSET 16
+#define MIN_BRIGHT_ROUGH_BITS 12
+#define MIN_BRIGHT_ROUGH_MASK (((1 << 12) - 1) << 16)
+
+/* Bits of RAW_ROUGH_GAIN_R_1 (0x00000064) */
+
+#define GAIN_R_ROUGH_1_OFFSET 0
+#define GAIN_R_ROUGH_1_BITS 11
+#define GAIN_R_ROUGH_1_MASK (((1 << 11) - 1) << 0)
+
+#define GAIN_R_ROUGH_2_OFFSET 16
+#define GAIN_R_ROUGH_2_BITS 11
+#define GAIN_R_ROUGH_2_MASK (((1 << 11) - 1) << 16)
+
+/* Bits of RAW_ROUGH_GAIN_R_2 (0x00000068) */
+
+#define GAIN_R_ROUGH_3_OFFSET 0
+#define GAIN_R_ROUGH_3_BITS 11
+#define GAIN_R_ROUGH_3_MASK (((1 << 11) - 1) << 0)
+
+#define GAIN_R_ROUGH_4_OFFSET 16
+#define GAIN_R_ROUGH_4_BITS 11
+#define GAIN_R_ROUGH_4_MASK (((1 << 11) - 1) << 16)
+
+/* Bits of RAW_ROUGH_GAIN_R_3 (0x0000006c) */
+
+#define GAIN_R_ROUGH_5_OFFSET 0
+#define GAIN_R_ROUGH_5_BITS 11
+#define GAIN_R_ROUGH_5_MASK (((1 << 11) - 1) << 0)
+
+#define GAIN_R_ROUGH_6_OFFSET 16
+#define GAIN_R_ROUGH_6_BITS 11
+#define GAIN_R_ROUGH_6_MASK (((1 << 11) - 1) << 16)
+
+/* Bits of RAW_ROUGH_GAIN_B_1 (0x00000070) */
+
+#define GAIN_B_ROUGH_1_OFFSET 0
+#define GAIN_B_ROUGH_1_BITS 11
+#define GAIN_B_ROUGH_1_MASK (((1 << 11) - 1) << 0)
+
+#define GAIN_B_ROUGH_2_OFFSET 16
+#define GAIN_B_ROUGH_2_BITS 11
+#define GAIN_B_ROUGH_2_MASK (((1 << 11) - 1) << 16)
+
+/* Bits of RAW_ROUGH_GAIN_B_2 (0x00000074) */
+
+#define GAIN_B_ROUGH_3_OFFSET 0
+#define GAIN_B_ROUGH_3_BITS 11
+#define GAIN_B_ROUGH_3_MASK (((1 << 11) - 1) << 0)
+
+#define GAIN_B_ROUGH_4_OFFSET 16
+#define GAIN_B_ROUGH_4_BITS 11
+#define GAIN_B_ROUGH_4_MASK (((1 << 11) - 1) << 16)
+
+/* Bits of RAW_ROUGH_GAIN_B_3 (0x00000078) */
+
+#define GAIN_B_ROUGH_5_OFFSET 0
+#define GAIN_B_ROUGH_5_BITS 11
+#define GAIN_B_ROUGH_5_MASK (((1 << 11) - 1) << 0)
+
+#define GAIN_B_ROUGH_6_OFFSET 16
+#define GAIN_B_ROUGH_6_BITS 11
+#define GAIN_B_ROUGH_6_MASK (((1 << 11) - 1) << 16)
+
+/* Bits of RAW_WP_NUM1 (0x0000007c) */
+
+#define WP_NUM_1_OFFSET 0
+#define WP_NUM_1_BITS 22
+#define WP_NUM_1_MASK (((1 << 22) - 1) << 0)
+
+/* Bits of RAW_WP_NUM2 (0x00000080) */
+
+#define WP_NUM_2_OFFSET 0
+#define WP_NUM_2_BITS 22
+#define WP_NUM_2_MASK (((1 << 22) - 1) << 0)
+
+/* Bits of RAW_WP_NUM3 (0x00000084) */
+
+#define WP_NUM_3_OFFSET 0
+#define WP_NUM_3_BITS 22
+#define WP_NUM_3_MASK (((1 << 22) - 1) << 0)
+
+/* Bits of RAW_WP_NUM4 (0x00000088) */
+
+#define WP_NUM_4_OFFSET 0
+#define WP_NUM_4_BITS 22
+#define WP_NUM_4_MASK (((1 << 22) - 1) << 0)
+
+/* Bits of RAW_WP_NUM5 (0x0000008c) */
+
+#define WP_NUM_5_OFFSET 0
+#define WP_NUM_5_BITS 22
+#define WP_NUM_5_MASK (((1 << 22) - 1) << 0)
+
+/* Bits of RAW_WP_NUM6 (0x00000090) */
+
+#define WP_NUM_6_OFFSET 0
+#define WP_NUM_6_BITS 22
+#define WP_NUM_6_MASK (((1 << 22) - 1) << 0)
+
+/* Bits of RAW_WIN_STATIS_ADDR (0x00000094) */
+
+#define RAW_ADDR_OFFSET 0
+#define RAW_ADDR_BITS 8
+#define RAW_ADDR_MASK (((1 << 8) - 1) << 0)
+
+/* Bits of RAW_WIN_STATIS_PIXEL_NUM (0x00000098) */
+
+#define WIN_NUM_STATS_OFFSET 0
+#define WIN_NUM_STATS_BITS 14
+#define WIN_NUM_STATS_MASK (((1 << 14) - 1) << 0)
+
+/* Bits of RAW_WIN_BG_RG_MEAN_DIV (0x0000009c) */
+
+#define COOR_GAIN1_RF_OFFSET 0
+#define COOR_GAIN1_RF_BITS 11
+#define COOR_GAIN1_RF_MASK (((1 << 11) - 1) << 0)
+
+#define COOR_GAIN2_RF_OFFSET 16
+#define COOR_GAIN2_RF_BITS 11
+#define COOR_GAIN2_RF_MASK (((1 << 11) - 1) << 16)
+
+/* Bits of RAW_WIN_MEAN0 (0x000000a0) */
+
+#define MEAN_RF_OFFSET 0
+#define MEAN_RF_BITS 12
+#define MEAN_RF_MASK (((1 << 12) - 1) << 0)
+
+#define G_MEAN_RF_OFFSET 16
+#define G_MEAN_RF_BITS 12
+#define G_MEAN_RF_MASK (((1 << 12) - 1) << 16)
+
+/* Bits of RAW_WIN_MEAN1 (0x000000a4) */
+
+#define B_MEAN_RF_OFFSET 0
+#define B_MEAN_RF_BITS 12
+#define B_MEAN_RF_MASK (((1 << 12) - 1) << 0)
+
+#define Y_MEAN_RF_OFFSET 16
+#define Y_MEAN_RF_BITS 12
+#define Y_MEAN_RF_MASK (((1 << 12) - 1) << 16)
+
+/* Bits of RAW_WIN_R_SUM (0x000000a8) */
+
+#define SUM_R_OFFSET 0
+#define SUM_R_BITS 26
+#define SUM_R_MASK (((1 << 26) - 1) << 0)
+
+/* Bits of RAW_WIN_G_SUM (0x000000ac) */
+
+#define SUM_G_OFFSET 0
+#define SUM_G_BITS 26
+#define SUM_G_MASK (((1 << 26) - 1) << 0)
+
+/* Bits of RAW_WIN_B_SUM (0x000000b0) */
+
+#define SUM_B_OFFSET 0
+#define SUM_B_BITS 26
+#define SUM_B_MASK (((1 << 26) - 1) << 0)
+
+#endif /* _RAW_STATS_H_INC_ */

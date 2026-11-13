@@ -1,0 +1,32 @@
+* long_names:false proto3_singular_msgs:true mangle_names:M_FLATTEN
+
+*.name max_size:32
+*_writable no_unions:true
+
+isp_algo_param_index_t.* int_size:8 max_count:2 fixed_count:true
+isp_algo_param_point_t.* int_size:16
+
+isp_algo_param_texture_v1_t.nests max_count: 16
+
+isp_algo_param_ae_v1_t.*y_mean int_size:16
+isp_algo_param_ae_v1_t.*_index int_size:8
+isp_algo_param_ae_v1_t.gain max_count:4 fixed_count:true
+isp_algo_param_ae_v1_t.exposure max_count:4 fixed_count:true
+isp_algo_param_ae_v1_t.etgain_ratio max_count:3 fixed_count:true
+isp_algo_param_ae_v1_t.hdr_mean max_count:4 fixed_count:true
+isp_algo_param_ae_v1_t.hdr_over_ratio max_count:4 fixed_count:true
+isp_algo_param_ae_v1_t.hdr_stable_info max_count:4 fixed_count:true
+isp_algo_param_ae_v1_t.analog_gain max_count:4 fixed_count:true
+isp_algo_param_ae_v1_t.digital_gain max_count:4 fixed_count:true
+isp_algo_param_ae_v1_t.isp_hdr_gain max_count:4 fixed_count:true
+isp_algo_param_ae_v1_t.same_block_num int_size:16
+isp_algo_param_ae_v1_t.contrast* int_size:16
+
+isp_algo_param_af_v1_t.position int_size:16
+isp_algo_param_af_v1_t.position_index int_size:8
+
+isp_algo_param_flick_v1_t.insert_dummy_line int_size:16
+
+isp_algo_param_wdr_v1_t.low_bound int_size:16
+isp_algo_param_wdr_v1_t.wdr_level int_size:8
+isp_algo_param_wdr_v1_t.hist_contrast* int_size:16

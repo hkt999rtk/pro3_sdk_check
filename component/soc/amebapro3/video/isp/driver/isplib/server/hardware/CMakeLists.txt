@@ -1,0 +1,10 @@
+set(source)
+include(chip_config.cmake)
+set(target isp_server_hardware)
+add_library(${target} OBJECT ${source})
+target_compile_definitions(${target} PRIVATE CONFIG_${CHIP_ID})
+target_include_chip_regs(${target} PRIVATE regs)
+target_link_libraries(${target} PRIVATE isp_common_interface)
+target_link_libraries(${target} PRIVATE isp_server_interface)
+
+set_property(GLOBAL APPEND PROPERTY isp_server_objs $<TARGET_OBJECTS:${target}>)

@@ -1,0 +1,86 @@
+# License-Identifier: GPL-2.0
+#
+# Main linux build file.
+#
+
+################################################################################
+# Macros.
+
+VIPLITE_ROOT              ?= $(PWD)
+export VIPLITE_ROOT
+
+################################################################################
+# Include common definitions.
+
+include $(VIPLITE_ROOT)/makefile.linux.def
+
+.PHONY: default_target all clean install drivers
+default_target: all
+
+################################################################################
+# Components of the project.
+
+# vipcore
+VIP_CORE            := $(VIPLITE_ROOT)/vip_drv/src
+
+.PHONY: vip_core
+vip_core:           $(VIP_CORE)
+
+# libVIPhal
+LIB_VIP_HAL        := $(VIPLITE_ROOT)/vip_hal/src
+LIB_LIST            := $(LIB_VIP_HAL)
+VIPLITE_REQURES	    := $(LIB_VIP_HAL)
+
+# libVIPlite
+LIB_NBG_LINKER        := $(VIPLITE_ROOT)/nbg_linker
+LIB_LIST            += $(LIB_NBG_LINKER)
+
+# libVIPpreprocess
+ifeq ($(ENABLE_NODE),1)
+	LIB_VIP_PREPROCESS  := $(VIPLITE_ROOT)/nbg_linker/preprocess
+	LIB_LIST            += $(LIB_VIP_PREPROCESS)
+	VIPLITE_REQURES	    += $(LIB_VIP_PREPROCESS)
+endif
+
+$(LIB_NBG_LINKER):     $(VIPLITE_REQURES)
+
+.PHONY: vip_drv
+vip_drv:            $(LIB_NBG_LINKER)
+
+################################################################################
+# Define the macros used in the common makefile.
+
+SUBDIRS             := $(LIB_LIST)
+MAIN_MODULE         := $(LIB_LIST) $(VIP_CORE)
+
+################################################################################
+# Targets
+
+all:     $(MAIN_MODULE)
+
+
+clean:   $(MAIN_MODULE)
+
+
+install: all
+	@mkdir -p $(SDK_DIR)
+
+.PHONY: $(SUBDIRS)
+$(SUBDIRS):
+	@test ! -d $@ || $(MAKE) -f makefile.linux -C $@ $(MAKECMDGOALS)
+
+.PHONY: $(VIP_CORE)
+
+ifeq ($(KERNEL_DIR),)
+$(warning "-------------------------------------------------")
+$(warning "Warning: KERNEL_DIR not set")
+$(warning "Warning: kernel driver will not be build")
+$(warning "-------------------------------------------------")
+
+else
+$(VIP_CORE):
+	@test ! -d $@ || $(MAKE) -f Kbuild -C $@ $(MAKECMDGOALS)
+
+drivers:            $(VIP_CORE)
+endif
+

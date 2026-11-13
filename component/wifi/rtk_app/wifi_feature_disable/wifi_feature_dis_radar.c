@@ -1,0 +1,156 @@
+/**
+  ******************************************************************************
+  * @file    wifi_feature_dis_radar.c
+  * @author
+  * @version
+  * @date
+  ******************************************************************************
+  * @attention
+  *
+  * This module is a confidential and proprietary property of RealTek and
+  * possession or use of this module requires written permission of RealTek.
+  *
+  * Copyright(c) 2024, Realtek Semiconductor Corporation. All rights reserved.
+  ******************************************************************************
+  */
+#define __WIFI_FEATURE_DIS_CSI_C__
+
+#include "wifi_api_types.h"
+
+#ifdef CONFIG_RADAR
+void wifi_hal_radar_support_set(void)
+{
+
+}
+
+void wifi_hal_radar_en_by_user(u8 *radar_en_by_user)
+{
+	*radar_en_by_user = 0;
+}
+
+s32 wifi_hal_radar_recv_data(u16 frame_num, u8 frame_type, u8 *data)
+{
+	UNUSED(frame_num);
+	UNUSED(frame_type);
+	UNUSED(data);
+	return -1;
+}
+
+void wifi_hal_radar_deinit(void *a)
+{
+	UNUSED(a);
+}
+
+void wifi_hal_radar_parm_init(void)
+{
+
+}
+
+s32 wifi_hal_radar_cfg(void)
+{
+	return -1;
+}
+
+s32 wifi_hal_radar_en(void)
+{
+	return -1;
+}
+
+void wifi_hal_radar_interrupt_handle(void)
+{
+
+}
+
+void wifi_hal_radar_rpt_hdl(u8 *buf, void *a)
+{
+	UNUSED(buf);
+	UNUSED(a);
+}
+
+s32 wifi_hal_radar_check_status(u8 *radar_active)
+{
+	UNUSED(radar_active);
+	return 0;
+}
+
+void wifi_hal_radar_query(char *cmd_ptr, u32 extra_arg)
+{
+	(void)cmd_ptr;
+	(void)extra_arg;
+}
+
+void wifi_hal_radar_parm_set(char *cmd_ptr, u32 extra_arg)
+{
+	(void)cmd_ptr;
+	(void)extra_arg;
+}
+
+void wifi_hal_radar_bb_parm_set(char *cmd_ptr, u32 extra_arg)
+{
+	(void)cmd_ptr;
+	(void)extra_arg;
+}
+
+void wifi_hal_dbg_radar_psd_check(char *cmd_ptr, u32 extra_arg)
+{
+	(void)cmd_ptr;
+	(void)extra_arg;
+}
+
+void wifi_hal_dbg_radar_debug_type(char *cmd_ptr, u32 extra_arg)
+{
+	(void)cmd_ptr;
+	(void)extra_arg;
+}
+
+void wifi_hal_radar_dbg_log(char *cmd_ptr, u32 extra_arg)
+{
+	(void)cmd_ptr;
+	(void)extra_arg;
+}
+
+#ifdef CONFIG_MP_INCLUDED
+void wifi_hal_radar_start(void)
+{
+
+}
+
+void wifi_hal_radar_stop(void)
+{
+
+}
+
+void wifi_hal_radar_bw(u8 bw_idx)
+{
+	UNUSED(bw_idx);
+}
+
+void wifi_hal_radar_chirp(u8 chirp_width, u8 chirp_num)
+{
+	UNUSED(chirp_width);
+	UNUSED(chirp_num);
+}
+
+void wifi_hal_radar_frame(u8 frame_intev, u16 frame_num)
+{
+	UNUSED(frame_intev);
+	UNUSED(frame_num);
+}
+
+void wifi_hal_radar_trx(u8 start)
+{
+	UNUSED(start);
+}
+
+s16 wifi_hal_radar_get_iso(void)
+{
+	return 0;
+}
+
+s16 wifi_hal_radar_get_rssi(void)
+{
+	return 0;
+}
+#endif
+
+#endif /* CONFIG_RADAR */

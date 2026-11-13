@@ -1,0 +1,111 @@
+
+//tool_version:1.4.35
+
+#ifndef _FLICK_H_INC_
+#define _FLICK_H_INC_
+
+#include <isp_reg.h>
+#include <isp_reg_base.h>
+
+#define FLICK_CTRL (FLICK_BASE_ADDR + 0x00000000) //0x00007000
+#define FLICK_SAMPLE_STEP (FLICK_BASE_ADDR + 0x00000004) //0x00007004
+#define FLICK_SAMPLE_START (FLICK_BASE_ADDR + 0x00000008) //0x00007008
+#define FLICK_FFT_RESULT_CONTRL (FLICK_BASE_ADDR + 0x0000000c) //0x0000700c
+#define FLICK_FFT_RESUT_SUM2_127 (FLICK_BASE_ADDR + 0x00000010) //0x00007010
+#define FLICK_FFT_RESUT_SUM2_9 (FLICK_BASE_ADDR + 0x00000014) //0x00007014
+#define FLICK_SAMPLE_BITS_H (FLICK_BASE_ADDR + 0x00000020) //0x00007020
+#define FLICK_CTRL_W1S (FLICK_BASE_ADDR + 0x00000024) //0x00007024
+#define FLICK_MEM_RESULT_BASE (FLICK_BASE_ADDR + 0x00000400) //0x00007400
+#define FLICK_MEM_RESULT_TOP (FLICK_BASE_ADDR + 0x000007fc) //0x000077fc
+
+/* Bits of FLICK_CTRL (0x00000000) */
+
+#define FLICK_IDLE_OFFSET 2
+#define FLICK_IDLE_BITS 1
+#define FLICK_IDLE_MASK (((1 << 1) - 1) << 2)
+
+#define STATIS_MODE_OFFSET 4
+#define STATIS_MODE_BITS 1
+#define STATIS_MODE_MASK (((1 << 1) - 1) << 4)
+
+/* Bits of FLICK_SAMPLE_STEP (0x00000004) */
+
+#define FLICK_H_DEC_OFFSET 0
+#define FLICK_H_DEC_BITS 4
+#define FLICK_H_DEC_MASK (((1 << 4) - 1) << 0)
+
+#define FLICK_H_INT_OFFSET 4
+#define FLICK_H_INT_BITS 4
+#define FLICK_H_INT_MASK (((1 << 4) - 1) << 4)
+
+#define FLICK_V_DEC_OFFSET 8
+#define FLICK_V_DEC_BITS 4
+#define FLICK_V_DEC_MASK (((1 << 4) - 1) << 8)
+
+#define FLICK_V_INT_OFFSET 12
+#define FLICK_V_INT_BITS 4
+#define FLICK_V_INT_MASK (((1 << 4) - 1) << 12)
+
+/* Bits of FLICK_SAMPLE_START (0x00000008) */
+
+#define FLICK_START_H_OFFSET 0
+#define FLICK_START_H_BITS 16
+#define FLICK_START_H_MASK (((1 << 16) - 1) << 0)
+
+#define FLICK_START_V_OFFSET 16
+#define FLICK_START_V_BITS 16
+#define FLICK_START_V_MASK (((1 << 16) - 1) << 16)
+
+/* Bits of FLICK_FFT_RESULT_CONTRL (0x0000000c) */
+
+#define FLICK_RESULT_TYPE_OFFSET 0
+#define FLICK_RESULT_TYPE_BITS 1
+#define FLICK_RESULT_TYPE_MASK (((1 << 1) - 1) << 0)
+
+#define FW_TRIG_FFT_OFFSET 1
+#define FW_TRIG_FFT_BITS 1
+#define FW_TRIG_FFT_MASK (((1 << 1) - 1) << 1)
+
+#define FLICK_SHIFT_BITS_OFFSET 2
+#define FLICK_SHIFT_BITS_BITS 3
+#define FLICK_SHIFT_BITS_MASK (((1 << 3) - 1) << 2)
+
+/* Bits of FLICK_FFT_RESUT_SUM2_127 (0x00000010) */
+
+#define FFT_SUM_OFFSET 0
+#define FFT_SUM_BITS 29
+#define FFT_SUM_MASK (((1 << 29) - 1) << 0)
+
+/* Bits of FLICK_FFT_RESUT_SUM2_9 (0x00000014) */
+
+#define FFT_SUM_PART_OFFSET 0
+#define FFT_SUM_PART_BITS 29
+#define FFT_SUM_PART_MASK (((1 << 29) - 1) << 0)
+
+/* Bits of FLICK_SAMPLE_BITS_H (0x00000020) */
+
+#define SAMPLE_BITS_H_OFFSET 0
+#define SAMPLE_BITS_H_BITS 4
+#define SAMPLE_BITS_H_MASK (((1 << 4) - 1) << 0)
+
+/* Bits of FLICK_CTRL_W1S (0x00000024) */
+
+#define FLICK_STOP_OFFSET 0
+#define FLICK_STOP_BITS 1
+#define FLICK_STOP_MASK (((1 << 1) - 1) << 0)
+
+#define FLICK_START_OFFSET 8
+#define FLICK_START_BITS 1
+#define FLICK_START_MASK (((1 << 1) - 1) << 8)
+
+#define FLICK_ERROR_FLAG_OFFSET 16
+#define FLICK_ERROR_FLAG_BITS 1
+#define FLICK_ERROR_FLAG_MASK (((1 << 1) - 1) << 16)
+
+/* Bits of FLICK_MEM_RESULT (0x00000400~0x000007fc) */
+
+#define FFT_STATS_RESULT_OFFSET 0
+#define FFT_STATS_RESULT_BITS 24
+#define FFT_STATS_RESULT_MASK (((1 << 24) - 1) << 0)
+
+#endif /* _FLICK_H_INC_ */

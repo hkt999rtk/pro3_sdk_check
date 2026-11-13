@@ -1,0 +1,180 @@
+# License-Identifier: GPL-2.0
+#
+# Linux build file for NBG Linker.
+#
+
+################################################################################
+# Include common definitions.
+
+include $(VIPLITE_ROOT)/makefile.linux.def
+
+GIT_COMMIT = $(shell git rev-parse --short HEAD)
+$(info "git commit id is : " $(GIT_COMMIT))
+ifneq ($(GIT_COMMIT), )
+$(shell sed -i '79D' $(VIPLITE_ROOT)/common/vip_lite_version.h)
+$(shell sed -i '78a#define VERSION_PATCH   "$(GIT_COMMIT)"' $(VIPLITE_ROOT)/common/vip_lite_version.h)
+endif
+
+################################################################################
+# Define target module name.
+
+ifeq ($(STATIC_LINK_BUILD), 1)
+  STATIC            := 1
+  TARGET_MODULE     := $(OBJ_DIR)/libNBGlinker.a
+else
+  DYNAMIC           := 1
+  TARGET_MODULE     := $(OBJ_DIR)/libNBGlinker.so
+  TARGET_SONAME     := libNBGlinker.so
+endif
+
+################################################################################
+# Installation directory
+
+INSTALL_DIR         := $(SDK_DIR)/drivers
+
+################################################################################
+# Supply additional include directories.
+
+INCLUDE := -I$(VIPLITE_ROOT)/common/     \
+           -I$(VIPLITE_ROOT)/vip_drv/inc \
+           -I$(VIPLITE_ROOT)/vip_hal/inc \
+           -I$(VIPLITE_ROOT)/vip_hal/src/os/linux \
+           -I$(VIPLITE_ROOT)/nbg_linker/inc \
+           -I$(VIPLITE_ROOT)/include/       \
+           -I$(VIPLITE_ROOT)/include/nbg_linker/
+
+ifeq ($(ENABLE_NODE), 1)
+  INCLUDE += -I$(VIPLITE_ROOT)/nbg_linker/preprocess/inc
+endif
+
+CFLAGS += $(INCLUDE)
+
+################################################################################
+# Add extra flags for object files.
+
+CFLAGS += -fPIC -Werror -Wshadow -Wsign-compare
+CFLAGS += -ansi
+
+
+################################################################################
+# Define flags for the linker.
+
+LFLAGS += -Wl,--version-script=libNBGlinker.map
+LFLAGS += -Wall -Wl,-z,defs -shared -Wl,-soname,$(TARGET_SONAME)
+
+# Reduce library size
+ifneq ($(DEBUG), 1)
+ifeq ($(DYNAMIC),1)
+	ifneq ($(ENABLE_ASAN), 1)
+		LFLAGS += -s
+	endif
+endif
+endif
+# Define flags for the asan.
+ifeq ($(ENABLE_ASAN), 1)
+	CFLAGS += -g
+	LFLAGS += -fsanitize=address -fno-omit-frame-pointer
+endif
+
+# Define flags for the gcov.
+ifeq ($(ENABLE_GCOV), 1)
+	CFLAGS += -fprofile-arcs -ftest-coverage
+endif
+
+################################################################################
+# Supply dependent libraries.
+
+# Specify Vivante library paths.
+LIBS += -L $(VIPLITE_ROOT)/vip_hal/src/$(OBJ_DIR)
+LIBS += -L $(VIPLITE_ROOT)/vip_hal/src/linux/$(OBJ_DIR)
+LIBS += -lVIPhal -lm
+
+# link asan for memory leak check
+ifeq ($(ENABLE_ASAN), 1)
+	LIBS += -lasan
+endif
+
+# link gcov for code coverage check
+ifeq ($(ENABLE_GCOV), 1)
+	LIBS += -lgcov
+endif
+
+# Supply necessary libraries.
+ifeq ($(ENABLE_NODE), 1)
+  LIBS += $(VIPLITE_ROOT)/nbg_linker/preprocess/$(OBJ_DIR)/libVIPpreprocess.a
+endif
+
+################################################################################
+# Describe object files.
+
+OBJECTS := $(OBJ_DIR)/nbg_lk_cpu.o \
+           $(OBJ_DIR)/nbg_lk_user_cpu.o \
+           $(OBJ_DIR)/nbg_fmt_util.o \
+           $(OBJ_DIR)/nbg_fmt_v1.o \
+           $(OBJ_DIR)/nbg_fmt_v2.o \
+           $(OBJ_DIR)/nbg_lk_relocate.o \
+           $(OBJ_DIR)/nbg_lk.o \
+           $(OBJ_DIR)/nbg_lk_buffer.o \
+           $(OBJ_DIR)/nbg_lk_coeff.o \
+           $(OBJ_DIR)/nbg_lk_debug.o \
+           $(OBJ_DIR)/nbg_lk_network.o \
+           $(OBJ_DIR)/nbg_lk_group.o \
+           $(OBJ_DIR)/nbg_lk_util.o \
+           $(OBJ_DIR)/nbg_lk_nld.o \
+           $(OBJ_DIR)/nbg_lk_list.o \
+           $(OBJ_DIR)/nbg_lk_context.o \
+           $(OBJ_DIR)/nbg_lk_capture.o \
+           $(OBJ_DIR)/nbg_lk_npd.o
+
+
+ifeq ($(ENABLE_NODE), 1)
+  OBJECTS += $(OBJ_DIR)/nbg_lk_preprocess.o \
+             $(OBJ_DIR)/nbg_lk_node.o
+endif
+
+################################################################################
+# Define targets.
+
+.PHONY: all clean install extra_install
+
+all: $(TARGET_MODULE)
+
+clean:
+	@rm -rf $(OBJ_DIR)
+	@rm -rf $(INSTALL_DIR)/libNBGlinker.*
+	@rm -rdf $(SDK_DIR)
+
+install: extra_install
+	@mkdir -p $(INSTALL_DIR)
+	@-cp $(TARGET_MODULE) $(INSTALL_DIR)
+
+extra_install: all
+	@mkdir -p $(SDK_DIR)/drivers
+	@mkdir -p $(SDK_DIR)/include
+	@-cp -rf $(VIPLITE_ROOT)/include/* $(SDK_DIR)/include/
+
+################################################################################
+# Module rules.
+
+ifeq ($(STATIC),1)
+$(TARGET_MODULE): $(OBJECTS)
+	$(AR) -r -c $@ $(OBJECTS)
+	$(RANLIB) $@
+endif
+
+ifeq ($(DYNAMIC),1)
+
+$(TARGET_MODULE): $(OBJECTS)
+	$(CC) $(LFLAGS) -o $@ $(OBJECTS) $(LIBS)
+endif
+
+################################################################################
+# Object rules.
+
+$(OBJ_DIR)/%.o: %.c
+	@mkdir -p $(OBJ_DIR)
+	$(CC) -c $(CFLAGS) -MMD -o $@ $<
+
+# object dependencies.
+-include $(OBJECTS:.o=.d)
+

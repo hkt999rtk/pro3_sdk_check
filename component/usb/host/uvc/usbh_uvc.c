@@ -1,0 +1,852 @@
+/*
+ * Copyright (c) 2024 Realtek Semiconductor Corp.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* Includes ------------------------------------------------------------------*/
+
+#include "usbh_uvc.h"
+#include "usbh_uvc_class.h"
+#include "usbh_uvc_parse.h"
+#include "usbh_uvc_stream.h"
+
+/* Private defines -----------------------------------------------------------*/
+
+#define USBH_UVC_REQUEST_BUF_LEN                48U /**< Length of the UVC control request buffer. */
+
+#define USBH_UVC_SLOW_HOLD_MS        (1000U)
+
+/* Private types -------------------------------------------------------------*/
+
+/* Private macros ------------------------------------------------------------*/
+
+/* Private function prototypes -----------------------------------------------*/
+
+#if (USBH_UVC_USE_HW == 0)
+static void usbh_uvc_frame_unlock(usb_os_lock_t frame_mutex);
+#endif
+
+/* Private variables ---------------------------------------------------------*/
+
+static const char *const TAG = "UVC";
+
+/* Exported variables --------------------------------------------------------*/
+
+/** @brief The singleton UVC host handle, shared by the UVC translation units. */
+usbh_uvc_host_t uvc_host;
+
+/* Private functions ---------------------------------------------------------*/
+
+#if (USBH_UVC_USE_HW == 0)
+/**
+  * @brief	Release the frame list lock taken by get_frame/put_frame
+  * @param	frame_mutex: lock to release, held by the caller
+  * @retval None
+  */
+static void usbh_uvc_frame_unlock(usb_os_lock_t frame_mutex)
+{
+	/* Only fails for a lock not held by the caller, which would be a driver bug */
+	if (usb_os_unlock(frame_mutex) != RTK_SUCCESS) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "Frm unlock fail\n");
+	}
+}
+#endif
+
+/* Exported functions --------------------------------------------------------*/
+
+/**
+  * @brief	Init host video class
+  * @param	cb: user callback function
+  * @param	cfg: class configuration, see @ref usbh_uvc_config_t
+  * @retval Status
+  */
+int usbh_uvc_init(const usbh_uvc_cb_t *cb, const usbh_uvc_config_t *cfg)
+{
+	int ret = RTK_SUCCESS;
+	usbh_uvc_host_t *uvc = &uvc_host;
+	usbh_uvc_stream_t *stream = NULL;
+	u8 i;
+
+	if ((cb == NULL) || (cfg == NULL)) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "Invalid cb/cfg\n");
+		return -RTK_ERR_BADARG;
+	}
+
+	/* The size is rounded up to a cache line, then USBH_UVC_VIDEO_FRAME_NUMS of it are
+	 * allocated in one block: both steps shall stay within u32 */
+	if ((cfg->frame_buf_size == 0U) ||
+		(cfg->frame_buf_size > ((UINT32_MAX / USBH_UVC_VIDEO_FRAME_NUMS) - CACHE_LINE_SIZE))) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "Invalid buf size\n");
+		return -RTK_ERR_BADARG;
+	}
+
+#if USBH_UVC_USE_HW
+	/* The HW decoder is handed a [start_addr, end_addr] window computed as
+	 * start + buf_size - USBH_HW_UVC_ISOC_MPS - 1 (see usbh_hw_uvc.c). A
+	 * frame_buf_size at or below that margin makes the subtraction wrap, so
+	 * end_addr would land below start_addr and the decoder would be programmed
+	 * with an inverted window - undefined behaviour that can write outside the
+	 * buffer. Reject it here, where the size still comes from the caller. */
+	if (cfg->frame_buf_size <= (u32)USBH_HW_UVC_ISOC_MPS) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "Buf size %d <= HW margin %d\n", cfg->frame_buf_size, USBH_HW_UVC_ISOC_MPS);
+		return -RTK_ERR_BADARG;
+	}
+#endif
+
+	usb_os_memset((void *)uvc, 0x00, sizeof(usbh_uvc_host_t));
+	/* A GET request data stage reserves whole EP0 packets, refer to usbh_ctrl_request() */
+	uvc->request_buf = (u8 *)usb_os_malloc(usb_get_dma_len(USBH_UVC_REQUEST_BUF_LEN, USB_MAX_EP0_SIZE));
+	if (uvc->request_buf == NULL) {
+		return -RTK_ERR_NOMEM;
+	}
+
+	for (i = 0; i < USBH_UVC_VS_DESC_MAX_NUM; i++) {
+		stream = &uvc->stream[i];
+		stream->stream_idx = i;
+	}
+
+#if USBH_UVC_USE_HW
+	uvc->hw_isr_pri = cfg->hw_isr_pri;
+	uvc->hw_irq_ref_cnt = 0U;
+#endif
+
+	/* Registration may fail when the host's class_num budget is already full. Bail
+	 * out before publishing cb / running user init / allocating stream resources,
+	 * otherwise the app would see RTK_SUCCESS while no UVC driver takes part in
+	 * enumeration and would wait forever for an attach that never arrives. */
+	ret = usbh_uvc_class_init();
+	if (ret != RTK_SUCCESS) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "Reg class fail %d\n", ret);
+		usb_os_mfree((void *)uvc->request_buf);
+		uvc->request_buf = NULL;
+		return ret;
+	}
+
+	uvc->cb = cb;
+	if (cb->init != NULL) {
+		ret = cb->init();
+		if (ret != RTK_SUCCESS) {
+			RTK_LOGS(TAG, RTK_LOG_ERROR, "User init err %d\n", ret);
+			/* Roll back driver resources allocated above so a failed user init
+			 * does not leak request_buf or leave the class registered.
+			 * (Any DEBUG dump task is torn down by usbh_uvc_deinit if needed.) */
+			usbh_uvc_class_deinit();
+			usb_os_mfree((void *)uvc->request_buf);
+			uvc->request_buf = NULL;
+			return ret;
+		}
+	}
+
+	/* Allocate per-stream runtime resources for every stream (frame buffers,
+	 * worker threads, HW channels) and bring them to READY here. This absorbs the
+	 * former usbh_uvc_open(): the per-stream frame buffer size comes from
+	 * cfg->frame_buf_size. Device transfer still begins later in usbh_uvc_start(). */
+	for (i = 0; i < USBH_UVC_VS_DESC_MAX_NUM; i++) {
+		stream = &uvc->stream[i];
+		stream->frame_buffer_size = CACHE_LINE_ALIGNMENT(cfg->frame_buf_size);
+		ret = usbh_uvc_stream_open(stream);
+		if (ret != RTK_SUCCESS) {
+			RTK_LOGS(TAG, RTK_LOG_ERROR, "S%d open fail(%d)\n", i, ret);
+			stream->stream_state = UVC_STREAM_OFF;
+			/* Roll back: close streams already opened in this loop, then undo the
+			 * user init, class registration and request_buf allocated above. */
+			while (i > 0U) {
+				i--;
+				usbh_uvc_stream_close(&uvc->stream[i]);
+			}
+			if ((uvc->cb != NULL) && (uvc->cb->deinit != NULL)) {
+				uvc->cb->deinit();
+			}
+			usbh_uvc_class_deinit();
+			usb_os_mfree((void *)uvc->request_buf);
+			uvc->request_buf = NULL;
+			return ret;
+		}
+	}
+
+#if USBH_UVC_DEBUG
+#if (USBH_UVC_USE_HW == 1)
+	uvc->hw_dump_task_exit = 0U;
+	ret = usb_os_sema_create(&uvc->hw_dump_sema);
+	if (ret != RTK_SUCCESS) {
+		uvc->hw_dump_sema = NULL;
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "Create HW dump sema fail\n");
+	} else {
+		ret = rtos_task_create(&(uvc->hw_dump_task),
+							   ((const char *)"usbh_uvc_hw_status_dump_thread"),
+							   usbh_uvc_hw_status_dump_thread,
+							   NULL,
+							   512U,
+							   1U);
+		if (ret != RTK_SUCCESS) {
+			usb_os_sema_delete(uvc->hw_dump_sema);
+			uvc->hw_dump_sema = NULL;
+			RTK_LOGS(TAG, RTK_LOG_ERROR, "Create HW dump task fail\n");
+		}
+	}
+#else
+	uvc->max_hold_frame_ms = 0U;
+	uvc->sw_dump_task_exit = 0U;
+	ret = rtos_task_create(&(uvc->sw_dump_task),
+						   ((const char *)"usbh_uvc_sw_status_dump_thread"),
+						   usbh_uvc_sw_status_dump_thread,
+						   NULL,
+						   1024U,
+						   1U);
+	if (ret != RTK_SUCCESS) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "Create SW dump task fail\n");
+	}
+#endif
+#endif
+
+	return ret;
+}
+
+/**
+  * @brief	Deinit host video class
+  * @param	None
+  * @retval None
+  */
+void usbh_uvc_deinit(void)
+{
+	usbh_uvc_host_t *uvc = &uvc_host;
+	usbh_uvc_stream_t *stream;
+	u8 i;
+#if USBH_UVC_DEBUG
+	u8 wait_cnt = 0U;
+#endif
+
+	/* First, before anything is freed: on RTK_SUCCESS no attach/setup/process/detach of this
+	 * class runs any more, an EP0 request it left in flight is halted and a sof() still
+	 * running on another core is waited out. Anything else means nothing was released. */
+	if (usbh_uvc_class_deinit() != RTK_SUCCESS) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "Deinit refused\n");
+		return;
+	}
+
+	/* Deinit with the device still attached: the core released the class slot without a
+	 * detach(), so its streaming channels are still enabled and its descriptor tree still
+	 * allocated. Halt the channels before stream_close() frees the buffers they DMA into. */
+	if (uvc->host != NULL) {
+		uvc->state = UVC_STATE_IDLE;
+		usbh_uvc_class_release_device(uvc);
+	}
+
+	/* Close every stream opened in usbh_uvc_init(). Use USBH_UVC_VS_DESC_MAX_NUM
+	 * (not uvc_desc.vs_num): resources are allocated at init for all streams
+	 * regardless of how many the device actually enumerated. stream_close is a
+	 * no-op for streams still in UVC_STREAM_OFF. */
+	for (i = 0U; i < USBH_UVC_VS_DESC_MAX_NUM; i++) {
+		stream = &uvc->stream[i];
+		usbh_uvc_stream_close(stream);
+	}
+
+	usb_os_mfree((void *)uvc->request_buf);
+	uvc->request_buf = NULL;
+
+#if USBH_UVC_USE_HW && USBH_UVC_DEBUG
+	if (uvc->hw_dump_task_alive != 0U) {
+		uvc->hw_dump_task_exit = 1U;
+
+		if (uvc->hw_dump_sema != NULL) {
+			usb_os_sema_give(uvc->hw_dump_sema);
+			// thread will delete it
+		}
+
+		do {
+			usb_os_sleep_ms(1U);
+			wait_cnt++;
+		} while ((uvc->hw_dump_task_alive != 0U) && (wait_cnt < 100U));
+
+		if (wait_cnt >= 100U) {
+			RTK_LOGS(TAG, RTK_LOG_ERROR, "HW dump task stop timeout!\n");
+		}
+	}
+
+#endif
+
+#if (USBH_UVC_USE_HW == 0) && USBH_UVC_DEBUG
+	if (uvc->sw_dump_task_alive != 0U) {
+		uvc->sw_dump_task_exit = 1U;
+
+		do {
+			usb_os_sleep_ms(1U);
+			wait_cnt++;
+		} while ((uvc->sw_dump_task_alive != 0U) && (wait_cnt < 100U));
+
+		if (wait_cnt >= 100U) {
+			RTK_LOGS(TAG, RTK_LOG_ERROR, "SW dump task stop timeout!\n");
+		}
+	}
+#endif
+
+	uvc->uvc_desc.vs_num = 0U;
+
+	if ((uvc->cb != NULL) && (uvc->cb->deinit != NULL)) {
+		uvc->cb->deinit();
+	}
+
+}
+
+/**
+  * @brief	Set video parameter
+  * @param	para: user parameter, such as FPS, resolution
+  * @retval Status
+  * The CFG may have been rewritten to the closest configuration supported by the device.
+  * Consumers, such as RTSP, need to proceed with subsequent operations based on the updated CFG
+  */
+int usbh_uvc_set_param(usbh_uvc_s_ctx_t *para, u8 stream_index)
+{
+	int ret;
+	usbh_uvc_host_t *uvc = &uvc_host;
+	usbh_uvc_stream_t *stream = NULL;
+	usbh_uvc_stream_control_t *ctrl = NULL;
+	u8 format_idx = 0U;
+	u8 frame_idx = 0U;
+	u32 frame_interval = 0U;
+	u32 max_frame_size = 0U;
+	u32 max_xfer_size = 0U;
+
+	if (para == NULL) {
+		return -RTK_ERR_BADARG;
+	}
+
+	if ((para->fmt_type != USBH_UVC_FORMAT_MJPEG) && (para->fmt_type != USBH_UVC_FORMAT_YUV)
+		&& (para->fmt_type != USBH_UVC_FORMAT_H264) && (para->fmt_type != USBH_UVC_FORMAT_H265)) {
+		RTK_LOGS(TAG, RTK_LOG_INFO, "Unknown fmt type, just capture not save\n");
+	}
+
+	if (stream_index >= USBH_UVC_VS_DESC_MAX_NUM) {
+		return -RTK_ERR_BADARG;
+	}
+
+	stream = &uvc->stream[stream_index];
+	uvc->stream_ctrl_idx = stream->stream_idx;
+	/*Find format and closest resolution*/
+	ret = usbh_uvc_desc_find_format_frame(stream, para, &format_idx, &frame_idx);
+	if (ret != RTK_SUCCESS) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "Find fmt frm fail\n");
+		return -RTK_ERR_BADARG;
+	}
+
+	/*Find closest frame rate*/
+	ret = usbh_uvc_desc_find_frame_rate(stream, para, &frame_interval, &format_idx, &frame_idx);
+	if (ret != RTK_SUCCESS) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "Find fmt rate fail\n");
+		return -RTK_ERR_BADARG;
+	}
+
+	ctrl = &stream->stream_ctrl;
+	max_frame_size = ctrl->dwMaxVideoFrameSize;
+	max_xfer_size = ctrl->dwMaxPayloadTransferSize;
+	usb_os_memset((void *)ctrl, 0U, sizeof(usbh_uvc_stream_control_t));
+	ctrl->bmHint = 1U;  /* dwFrameInterval */
+	ctrl->bFormatIndex = format_idx;
+	ctrl->bFrameIndex = frame_idx;
+	ctrl->dwFrameInterval = frame_interval;
+	/* Restore values negotiated in previous PROBE round for cameras that validate these fields */
+	ctrl->dwMaxVideoFrameSize = max_frame_size;
+	ctrl->dwMaxPayloadTransferSize = max_xfer_size;
+
+	uvc->state = UVC_STATE_CTRL;
+	stream->state = STREAM_STATE_SET_PARA;
+	if (uvc->host != NULL) {
+		usbh_notify(uvc->host, 0U, &usbh_uvc_driver);
+	}
+
+	return RTK_SUCCESS;
+}
+
+/**
+  * @brief	Get a frame from video streaming
+  * @param	stream_index: Stream Index
+  * @retval Status
+  */
+usbh_uvc_frame_t *usbh_uvc_get_frame(u8 stream_index)
+{
+	usbh_uvc_host_t *uvc = &uvc_host;
+	usbh_uvc_frame_t *frame;
+	usbh_uvc_stream_t *stream = NULL;
+#if (USBH_UVC_USE_HW == 0)
+	usb_os_sema_t frame_sema = NULL;
+	usb_os_lock_t frame_mutex = NULL;
+#else
+	usbh_hw_uvc_dec_t *uvc_dec = NULL;
+	usb_os_sema_t dec_sema = NULL;
+	u32 frame_done_idx;
+	u32 frame_done_size;
+#endif
+
+	if (stream_index >= USBH_UVC_VS_DESC_MAX_NUM) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "Intf num ovfl\n");
+		return NULL;
+	}
+
+	stream = &uvc->stream[stream_index];
+
+	/* Handshake with usbh_uvc_exit_get_frame(): publish get_valid before reading the stream
+	 * state, so that either this call sees the stream stopped, or the teardown waits for it
+	 * before the semaphore and the lock below are deleted */
+	stream->get_valid = 1U;
+	usb_os_mem_sync();
+
+	if (stream->stream_state != UVC_STREAM_ACTIVE) {
+		goto exit;
+	}
+
+#if (USBH_UVC_USE_HW == 0)
+	frame_sema = stream->frame_sema;
+	frame_mutex = stream->frame_mutex;
+	if ((frame_sema == NULL) || (frame_mutex == NULL)) {
+		goto exit;
+	}
+
+	if (usb_os_sema_take(frame_sema, USBH_UVC_GET_FRAME_TIMEOUT) == RTK_SUCCESS) {
+
+		if (usb_os_lock(frame_mutex) != RTK_SUCCESS) {
+			/* Hand the frame count back, the frame stays queued for the next call */
+			if (usb_os_sema_give(frame_sema) != RTK_SUCCESS) {
+				RTK_LOGS(TAG, RTK_LOG_ERROR, "Frm sema lost\n");
+			}
+			goto exit;
+		}
+
+		if (stream->stream_state != UVC_STREAM_ACTIVE) {
+			usbh_uvc_frame_unlock(frame_mutex);
+			goto exit;
+		}
+
+		if (list_empty(&stream->frame_chain)) {
+			/*should not reach here*/
+			usbh_uvc_frame_unlock(frame_mutex);
+			RTK_LOGS(TAG, RTK_LOG_DEBUG, "No frm in c\n");
+			goto exit;
+		} else {
+			frame = list_first_entry(&stream->frame_chain, usbh_uvc_frame_t, list);
+			list_del_init(&frame->list);
+			frame->state = UVC_FRAME_INUSE;
+			usbh_uvc_frame_unlock(frame_mutex);
+#if USBH_UVC_DEBUG
+			frame->get_frame_ts = usb_os_get_timestamp_ms();
+#endif
+			/* Clear get_valid on the success path too, not only at 'exit:'. Otherwise
+			 * it stays 1 after the last frame of a completed capture, and a later
+			 * teardown makes usbh_uvc_exit_get_frame() wait forever for a get_frame
+			 * that has long since returned. */
+			usb_os_mem_sync();
+			stream->get_valid = 0U;
+			return frame;
+		}
+	} else {
+		goto exit;
+	}
+#else
+
+	uvc_dec = stream->uvc_dec;
+	if (uvc_dec == NULL) {
+		goto exit;
+	}
+
+	dec_sema = uvc_dec->dec_sema;
+	if (dec_sema == NULL) {
+		goto exit;
+	}
+
+	if (usb_os_sema_take(dec_sema, USBH_UVC_GET_FRAME_TIMEOUT) == RTK_SUCCESS) {
+		if (stream->stream_state != UVC_STREAM_ACTIVE) {
+			goto exit;
+		}
+
+		frame_done_idx = uvc_dec->frame_done_idx;
+		if (frame_done_idx >= (u32)USBH_UVC_VIDEO_FRAME_NUMS) {
+			goto exit;
+		}
+
+		frame_done_size = uvc_dec->frame_done_size;
+		/* dec_sema take (xQueueSemaphoreTake) + give (xQueueGiveFromISR) share the
+		 * same task_lock spinlock internally, providing a happens-before barrier
+		 * that makes the ISR writes of frame_done_idx/size visible here. */
+
+		frame = &stream->frame_buffer[frame_done_idx];
+		frame->byteused = frame_done_size;
+		/* The buffer was locked in the ISR at hand-off (buf_locked[frame_done_idx]).
+		 * It stays locked until the app returns it via usbh_uvc_put_frame(), which
+		 * guarantees the HW never overwrites the frame while the app reads it.
+		 * INUSE tells usbh_uvc_start() the application holds it, unlike a buffer the
+		 * ISR locked for a hand-off a stop cut short. */
+		frame->state = UVC_FRAME_INUSE;
+
+		/* cache invalidate — HW decoder writes to PSRAM, CPU cache stale */
+		DCache_Invalidate((u32)frame->buf, CACHE_LINE_ALIGNMENT(frame->byteused));
+		/* Clear get_valid on the success path too (see SW branch note above) so a
+		 * post-completion teardown does not hang usbh_uvc_exit_get_frame(). */
+		usb_os_mem_sync();
+		stream->get_valid = 0U;
+		return frame;
+	} else {
+		goto exit;
+	}
+#endif
+
+exit:
+	if (stream->stream_state == UVC_STREAM_ACTIVE) {
+		RTK_LOGS(TAG, RTK_LOG_WARN, "Get fail\n");
+	}
+	/* Last access to the stream objects, refer to usbh_uvc_exit_get_frame() */
+	usb_os_mem_sync();
+	stream->get_valid = 0U;
+	return NULL;
+}
+
+/**
+  * @brief	Put frame buffer back to video streaming empty list
+  * @param	frame: uvc frame buffer to put
+  * @param	stream_index: Stream Index
+  * @retval RTK_SUCCESS on success, -RTK_ERR_BADARG on invalid parameters, -RTK_ERR_IO if the frame lock failed
+  */
+int usbh_uvc_put_frame(usbh_uvc_frame_t *frame, u8 stream_index)
+{
+#if (USBH_UVC_USE_HW == 0)
+	usbh_uvc_host_t *uvc = &uvc_host;
+	usbh_uvc_stream_t *stream = NULL;
+	usb_os_lock_t frame_mutex;
+	int ret = RTK_SUCCESS;
+#if USBH_UVC_DEBUG
+	u32 hold_time;
+	u32 put_frame_ts = usb_os_get_timestamp_ms();
+	u32 get_frame_ts;
+#endif
+
+	if ((frame == NULL) || (stream_index >= USBH_UVC_VS_DESC_MAX_NUM)) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "Intf num ovfl\n");
+		return -RTK_ERR_BADARG;
+	}
+
+	stream = &uvc->stream[stream_index];
+#if USBH_UVC_DEBUG
+	get_frame_ts = frame->get_frame_ts;
+
+	if (put_frame_ts > get_frame_ts) {
+		hold_time = put_frame_ts - get_frame_ts;
+	} else {
+		hold_time = (UINT32_MAX - get_frame_ts) + put_frame_ts + 1U;
+	}
+
+	if (hold_time > uvc->max_hold_frame_ms) {
+		uvc->max_hold_frame_ms = hold_time;
+		if (hold_time > USBH_UVC_SLOW_HOLD_MS) {
+			RTK_LOGS(TAG, RTK_LOG_DEBUG, "Slow,h:%dms\n", hold_time);
+		}
+	}
+#endif
+
+	/* Same handshake as usbh_uvc_get_frame(): the teardown waits for put_valid before it deletes
+	 * frame_mutex, so the lock taken below cannot be freed under this call */
+	stream->put_valid = 1U;
+	usb_os_mem_sync();
+
+	frame_mutex = stream->frame_mutex;
+	if ((stream->stream_state == UVC_STREAM_ACTIVE) && (frame_mutex != NULL)) {
+		if (usb_os_lock(frame_mutex) != RTK_SUCCESS) {
+			RTK_LOGS(TAG, RTK_LOG_ERROR, "Put lock fail\n");
+			ret = -RTK_ERR_IO;
+		} else {
+			list_del_init(&frame->list);
+			frame->err = 0U;
+			frame->byteused = 0U;
+			frame->timestamp = 0U;
+#if USBH_UVC_DEBUG
+			frame->get_frame_ts = 0U;
+#endif
+			frame->state = UVC_FRAME_INIT;
+			list_add_tail(&frame->list, &stream->frame_empty);
+
+			usbh_uvc_frame_unlock(frame_mutex);
+		}
+	} else {
+		/* Stream stopped: its lists are rebuilt by the next flush */
+		frame->state = UVC_FRAME_INIT;
+	}
+
+	usb_os_mem_sync();
+	stream->put_valid = 0U;
+	return ret;
+#else
+	usbh_uvc_host_t *uvc = &uvc_host;
+	usbh_uvc_stream_t *stream;
+	usbh_hw_uvc_dec_t *uvc_dec;
+	u32 idx;
+
+	if ((frame == NULL) || (stream_index >= USBH_UVC_VS_DESC_MAX_NUM)) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "Intf num ovfl\n");
+		return -RTK_ERR_BADARG;
+	}
+
+	stream = &uvc->stream[stream_index];
+
+	/* Same handshake as the SW path: the teardown waits for put_valid before it frees uvc_dec */
+	stream->put_valid = 1U;
+	usb_os_mem_sync();
+
+	uvc_dec = stream->uvc_dec;
+	if ((stream->stream_state != UVC_STREAM_OFF) && (uvc_dec != NULL)) {
+		/* Release the per-buffer lock set by the ISR at hand-off, so the HW may
+		 * recycle this buffer again (R4 safe-drop ownership handshake). */
+		idx = (u32)(frame - stream->frame_buffer);
+		if (idx < (u32)USBH_HW_UVC_MAX_BUF_NUM) {
+			frame->err = 0U;
+			frame->byteused = 0U;
+			frame->timestamp = 0U;
+			frame->state = UVC_FRAME_INIT;
+			usbh_hw_uvc_release_buf(uvc_dec, idx);
+		}
+	}
+
+	usb_os_mem_sync();
+	stream->put_valid = 0U;
+	return RTK_SUCCESS;
+#endif
+}
+
+/**
+ * @brief    Stop video streaming and return to the ready state (resources retained)
+ * @param    stream_index: Stream Index
+ * @retval RTK_SUCCESS on success or if the stream is not active,
+ *         -RTK_ERR_BADARG on invalid Stream Index
+ * @note     Data-flow-axis exit of the public lifecycle; pair with usbh_uvc_start().
+ *           Delegates to the stream mechanic usbh_uvc_stream_stop().
+ */
+int usbh_uvc_stop(u8 stream_index)
+{
+	usbh_uvc_host_t *uvc = &uvc_host;
+	usbh_uvc_stream_t *stream = NULL;
+	int ret;
+
+	if (stream_index >= USBH_UVC_VS_DESC_MAX_NUM) {
+		return -RTK_ERR_BADARG;
+	}
+
+	stream = &uvc->stream[stream_index];
+
+	/* Halt the local data path first, so no ISOC transfer is armed while the control
+	 * request below takes the interface down to alt 0. */
+	ret = usbh_uvc_stream_stop(stream);
+
+	/* Send SET_INTERFACE(bInterfaceNumber, 0) to the camera so it stops transmitting
+	 * ISOC data. Guard: only when device is still connected and an alt was selected.
+	 * Fire-and-forget via ctrl state machine (set_alt=0 → no probe after reset). */
+	if ((uvc->host != NULL) &&
+		(uvc->host->connect_state >= USBH_STATE_SETUP) &&
+		(stream->cur_setting.valid != 0U)) {
+		/* Alt 0 of a VS interface carries no isochronous endpoint (USB 2.0 §9.6.5) and the
+		 * isochronous bandwidth is released with it (§5.6.4), so the streaming pipe must be
+		 * closed here and re-established by a fresh SET_INTERFACE in usbh_uvc_start().
+		 * pipe_num 0 is the core's control channel - never close that one. */
+		if (stream->cur_setting.pipe.pipe_num != 0U) {
+			usbh_close_pipe(uvc->host, &stream->cur_setting.pipe);
+		}
+		stream->alt_active = 0U;
+		stream->start_pending = 0U;
+		stream->set_alt = 0U;
+		stream->set_alt_retry = 0U;
+		stream->state = STREAM_STATE_RESET_ALT;
+		uvc->state = UVC_STATE_CTRL;
+		uvc->stream_ctrl_idx = stream->stream_idx;
+		usbh_notify(uvc->host, 0U, &usbh_uvc_driver);
+	}
+
+	return ret;
+}
+
+/**
+ * @brief    Start video streaming and kick off isochronous data transfer
+ * @param    stream_index: Stream Index
+ * @retval RTK_SUCCESS on success or if the stream is already active,
+ *         -RTK_ERR_BADARG on invalid Stream Index,
+ *         -RTK_ERR_BUSY with the HW decoder while a frame got before usbh_uvc_stop() is not put back,
+ *         -RTK_ERR_IO if the stream is not in the ready state or the pipe is invalid
+ * @note     Data-flow-axis entry of the public lifecycle; pair with usbh_uvc_stop().
+ *           Delegates to the stream mechanic usbh_uvc_stream_start().
+ *           After usbh_uvc_stop() the camera sits on alt 0, so this call first re-issues
+ *           SET_INTERFACE(itf, alt) through the ctrl state machine and returns RTK_SUCCESS
+ *           immediately; the pipe is re-opened and the data path kicked off from
+ *           usbh_uvc_ctrl_set_alt_done(), the same single point used by set_param().
+ */
+int usbh_uvc_start(u8 stream_index)
+{
+	usbh_uvc_host_t *uvc = &uvc_host;
+	usbh_uvc_stream_t *stream = NULL;
+#if USBH_UVC_USE_HW
+	u32 i;
+#endif
+
+	if (stream_index >= USBH_UVC_VS_DESC_MAX_NUM) {
+		return -RTK_ERR_BADARG;
+	}
+
+	stream = &uvc->stream[stream_index];
+
+#if USBH_UVC_USE_HW
+	/* The start re-arms every HW buffer and drops the locks: a frame the application still
+	 * holds would be overwritten while it reads it, so it shall be put back first. Only a
+	 * frame handed out counts: the ISR also locks a buffer for a hand-off that the stop then
+	 * cuts short, which no get_frame delivers, so no put_frame would ever release it. */
+	if ((stream->stream_state == UVC_STREAM_READY) && (stream->uvc_dec != NULL)) {
+		for (i = 0U; i < (u32)USBH_HW_UVC_MAX_BUF_NUM; i++) {
+			if (stream->frame_buffer[i].state == UVC_FRAME_INUSE) {
+				RTK_LOGS(TAG, RTK_LOG_ERROR, "S%d frm not put\n", stream_index);
+				return -RTK_ERR_BUSY;
+			}
+		}
+	}
+#endif
+
+	/* Restart after usbh_uvc_stop(): the negotiated parameters and the selected alt are
+	 * still valid, so only the isochronous interface has to be re-selected. Probe/Commit
+	 * is deliberately not re-run - SET_INTERFACE alone re-arms the endpoint and re-reserves
+	 * the bandwidth (USB 2.0 §5.6.4, §9.4.10). */
+	if ((stream->stream_state == UVC_STREAM_READY) &&
+		(stream->alt_active == 0U) &&
+		(stream->cur_setting.valid != 0U) &&
+		(uvc->host != NULL) &&
+		(uvc->host->connect_state >= USBH_STATE_SETUP)) {
+		stream->start_pending = 1U;
+		stream->set_alt = 1U;
+		stream->set_alt_retry = 0U;
+		stream->state = STREAM_STATE_SET_ALT;
+		uvc->state = UVC_STATE_CTRL;
+		uvc->stream_ctrl_idx = stream->stream_idx;
+		usbh_notify(uvc->host, 0U, &usbh_uvc_driver);
+		return RTK_SUCCESS;
+	}
+
+	return usbh_uvc_stream_start(stream);
+}
+
+#if USBH_UVC_DEBUG
+/**
+  * @brief  Dump dev capability info (format, frame, resolution, fps).
+  * @retval None.
+  */
+void usbh_uvc_dump_dev_info(void)
+{
+	usbh_uvc_host_t *uvc = &uvc_host;
+	usbh_uvc_stream_t *stream = NULL;
+	usbh_uvc_vs_t *vs = NULL;
+	usbh_uvc_vs_format_t *fmt = NULL;
+	usbh_uvc_vs_frame_t *frm = NULL;
+	const char *fmt_name = NULL;
+	u32 i = 0;
+	u32 j = 0;
+	u32 fps = 0;
+	u8 stream_index = 0;
+
+	for (stream_index = 0; stream_index < USBH_UVC_VS_DESC_MAX_NUM; stream_index++) {
+		stream = &uvc->stream[stream_index];
+		vs = stream->vs_intf;
+		if (vs == NULL) {
+			continue;
+		}
+		if (vs->format == NULL) {
+			continue;
+		}
+
+		RTK_LOGS(TAG, RTK_LOG_INFO, "Intf %d:\n", stream_index);
+		for (i = 0; i < vs->format_num; i++) {
+			fmt = &vs->format[i];
+			if (fmt->type == USBH_UVC_FORMAT_YUV) {
+				fmt_name = "UNCOMPRESSED";
+			} else if (fmt->type == USBH_UVC_FORMAT_MJPEG) {
+				fmt_name = "MJPEG";
+			} else if (fmt->type == USBH_UVC_FORMAT_H264) {
+				fmt_name = "H264";
+			} else if (fmt->type == USBH_UVC_FORMAT_H265) {
+				fmt_name = "H265";
+			} else {
+				fmt_name = "UNKNOWN";
+			}
+
+			RTK_LOGS(TAG, RTK_LOG_INFO, "Format %d: %s (%d frame%s)\n",
+					 i, fmt_name, fmt->frame_num,
+					 (fmt->frame_num > 1) ? "s" : "");
+
+			for (j = 0U; j < fmt->frame_num; j++) {
+				frm = &fmt->frame[j];
+				/* Avoid div-by-zero if a descriptor reports a 0 default interval. */
+				fps = (frm->dwFrameInterval && frm->dwFrameInterval[0]) ?
+					  (USBH_UVC_FRAME_INTERVAL_UNIT_NS / frm->dwFrameInterval[0]) : 0;
+				RTK_LOGS(TAG, RTK_LOG_INFO, "  %d x %d @ %d fps\n", frm->wWidth, frm->wHeight, fps);
+			}
+		}
+	}
+}
+
+#if (USBH_UVC_USE_HW == 0)
+/**
+ * @brief  Clear class-layer frame and drop statistics via RTK_LOGS.
+ *         Call from the application at the start of each measurement round.
+ * @param[in] stream_index: Stream Index.
+ */
+void usbh_uvc_clear_stats(u8 stream_index)
+{
+	usbh_uvc_host_t *uvc = &uvc_host;
+	usbh_uvc_stream_t *stream = NULL;
+	if (stream_index >= USBH_UVC_VS_DESC_MAX_NUM) {
+		return;
+	}
+
+	stream = &uvc->stream[stream_index];
+
+	/* stream-level debug counters */
+	stream->rx_frame_cnt = 1;//this app should be called after get frame access first frame
+	stream->err_frame_cnt = 0;
+	stream->trunc_frame_cnt = 0;
+	stream->drop_frame_cnt = 0;
+	stream->dec_no_buf_cnt = 0;
+	stream->foi_no_buf_cnt = 0;
+	stream->eof_no_buf_cnt = 0;
+	stream->next_no_buf_cnt = 0;
+
+	/* stream-level (unconditional) */
+	stream->reuse_cnt = 0;
+
+	/* host-level timing peaks */
+	uvc->max_combine_cost_us = 0;
+	uvc->max_memcpy_cost_us = 0;
+	uvc->max_publish_cost_us = 0;
+	uvc->max_batch_drain_us = 0;
+	uvc->max_batch_cnt = 0;
+	uvc->max_hold_frame_ms = 0;
+}
+
+/**
+ * @brief  Print class-layer frame and drop statistics via RTK_LOGS.
+ *         Call from the application at the end of each measurement round.
+ * @param[in] stream_index: Stream Index.
+ */
+void usbh_uvc_print_stats(u8 stream_index)
+{
+	usbh_uvc_host_t *uvc = &uvc_host;
+	usbh_uvc_stream_t *stream = NULL;
+	if (stream_index >= USBH_UVC_VS_DESC_MAX_NUM) {
+		return;
+	}
+
+	stream = &uvc->stream[stream_index];
+
+	RTK_LOGS(TAG, RTK_LOG_INFO,
+			 "class: rx=%d err=%d trunc=%d drop=%d reuse=%d\n",
+			 stream->rx_frame_cnt, stream->err_frame_cnt, stream->trunc_frame_cnt,
+			 stream->drop_frame_cnt, stream->reuse_cnt);
+	RTK_LOGS(TAG, RTK_LOG_INFO,
+			 "nobuf: dec=%d foi=%d eof=%d next=%d\n",
+			 stream->dec_no_buf_cnt, stream->foi_no_buf_cnt,
+			 stream->eof_no_buf_cnt, stream->next_no_buf_cnt);
+	RTK_LOGS(TAG, RTK_LOG_INFO,
+			 "peak: combine=%d mcpy=%d pub=%d us\n",
+			 uvc->max_combine_cost_us, uvc->max_memcpy_cost_us,
+			 uvc->max_publish_cost_us);
+}
+#endif
+#endif

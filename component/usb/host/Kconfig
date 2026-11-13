@@ -1,0 +1,84 @@
+comment "USB Host Class Selection"
+
+config USBH_CDC_ACM_MENU
+    bool "CDC ACM"
+    select USBH_CDC_ACM if WHC_HOST || WHC_NONE
+
+    if USBH_CDC_ACM_MENU
+        config USBH_CDC_ACM_NOTIFY_MENU
+            bool "Notification support"
+            default n
+            select USBH_CDC_ACM_NOTIFY if WHC_HOST || WHC_NONE
+            help
+              Open the INTR IN pipe and report SERIAL_STATE through the notify callback.
+              The application shall also set USBH_SOF_INTR in usbh_config_t::ext_intr_enable,
+              because the notification watchdog runs from the SOF callback.
+              Leave disabled to save the pipe, the SOF watchdog and the notify code.
+
+        config USBH_CDC_ACM_4G_DONGLE_MENU
+            bool "4G LTE dongle support"
+            default n
+            select USBH_CDC_ACM_4G_DONGLE if WHC_HOST || WHC_NONE
+    endif
+
+config USBH_CDC_ECM_MENU
+    bool "CDC ECM"
+    depends on SUPPORT_USBH_ECM || SUPPORT_USBH_ECM_BRIDGE
+    select USBH_CDC_ECM if WHC_HOST || WHC_NONE
+
+    if USBH_CDC_ECM_MENU
+        choice
+            prompt "Select USB Ethernet"
+            default USBH_ECM_ETHERNET_MENU
+            config  USBH_ECM_ETHERNET_MENU
+                bool "USB Ethernet"
+                depends on SUPPORT_USBH_ECM
+                select USB_ETHERNET_PROVIDER
+                select USBH_ECM_ETHERNET if WHC_HOST || WHC_NONE
+            config  USBH_ECM_ETHERNET_BRIDGE_MENU
+                bool "USB Ethernet Bridge"
+                depends on SUPPORT_USBH_ECM_BRIDGE
+                select USB_ETHERNET_PROVIDER
+                select USB_ETHERNET_BRIDGE_PROVIDER
+                select USBH_ECM_ETHERNET_BRIDGE if WHC_HOST || WHC_NONE
+        endchoice
+    endif
+
+config USBH_CDC_NCM_MENU
+    bool "CDC NCM"
+    select USB_ETHERNET_PROVIDER
+    select USBH_CDC_NCM if WHC_HOST || WHC_NONE
+
+    if USBH_CDC_NCM_MENU
+        config USBH_CDC_NCM_TX_AGGREGATION
+            bool "Enable NCM TX datagram aggregation"
+            default n
+    endif
+
+config USBH_MSC_MENU
+    bool "MSC"
+    depends on VFS_MENU && SUPPORT_FATFS_USB
+    select USBH_MSC if WHC_HOST || WHC_NONE
+    select VFS_USB_HOST if WHC_HOST || WHC_NONE
+
+config USBH_UAC_MENU
+    bool "UAC"
+    select USB_UAC  if WHC_HOST || WHC_NONE
+    select USBH_UAC  if WHC_HOST || WHC_NONE
+    select AUDIO_FWK_MENU if SUPPORT_AUDIO_FOR_USB
+
+config USBH_HID_MENU
+    bool "HID"
+    select USBH_HID if WHC_HOST || WHC_NONE
+
+config USBH_UVC_MENU
+    bool "UVC"
+    select USBH_UVC if WHC_HOST || WHC_NONE
+
+config USBH_VENDOR_MENU
+    bool "VENDOR"
+    select USBH_VENDOR if WHC_HOST || WHC_NONE
+
+config USBH_DFU_MENU
+    bool "DFU"
+    select USBH_DFU if WHC_HOST || WHC_NONE

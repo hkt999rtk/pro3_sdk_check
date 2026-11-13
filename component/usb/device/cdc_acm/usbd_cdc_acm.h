@@ -1,0 +1,259 @@
+/*
+ * Copyright (c) 2024 Realtek Semiconductor Corp.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#ifndef USBD_CDC_ACM_H
+#define USBD_CDC_ACM_H
+
+/* Includes ------------------------------------------------------------------*/
+
+#include "platform_autoconf.h"
+#include "usbd.h"
+#include "usb_cdc_acm.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/** @addtogroup USB_Device_API USB Device API
+ *  @{
+ */
+
+/* Exported defines ----------------------------------------------------------*/
+
+/** @addtogroup USB_Device_Constants USB Device Constants
+ * @{
+ */
+/** @addtogroup Device_CDC_ACM_Constants Device CDC ACM Constants
+ * @{
+ */
+
+#define USBD_CDC_ACM_DEFAULT_INTR_IN_INTERVAL 8U    /**< Default INTR IN bInterval, used when the configuration leaves it 0. */
+
+/** @} End of Device_CDC_ACM_Constants group */
+/** @} End of USB_Device_Constants group */
+
+/* Exported types ------------------------------------------------------------*/
+
+/** @addtogroup USB_Device_Types USB Device Types
+ * @{
+ */
+/** @addtogroup Device_CDC_ACM_Types Device CDC ACM Types
+ * @{
+ */
+
+/**
+ * @brief Configuration for the CDC ACM class.
+ * @details Carries every CDC ACM option: the endpoint allocation, which the top-level
+ *          application owns, plus the class feature switches. Used by both standalone and
+ *          composite modes. Device-global parameters (VID/PID, strings, power attributes)
+ *          live in @ref usbd_dev_info_t instead, and application-level options such as
+ *          hotplug or task priorities belong in the example's own configuration structure.
+ * @note  The structure is stored by pointer, not copied, so it shall remain valid until
+ *        @ref usbd_cdc_acm_deinit.
+ */
+typedef struct {
+	u32 bulk_in_xfer_size;      /**< BULK IN transfer buffer size. */
+	u32 bulk_out_xfer_size;     /**< BULK OUT transfer buffer size. */
+	const char *itf_str;        /**< iInterface string of the communication interface, NULL for none. */
+	u8  bulk_in_addr;           /**< BULK IN endpoint address (e.g. 0x81). */
+	u8  bulk_out_addr;          /**< BULK OUT endpoint address (e.g. 0x01). */
+	u8  intr_in_addr;           /**< INTERRUPT IN endpoint address (e.g. 0x83). Ignored unless `notify_en` is set. */
+	u8  intr_in_interval_hs;    /**< INTR IN bInterval at High Speed, 0 uses @ref USBD_CDC_ACM_DEFAULT_INTR_IN_INTERVAL. */
+	u8  intr_in_interval_fs;    /**< INTR IN bInterval at Full Speed, 0 uses @ref USBD_CDC_ACM_DEFAULT_INTR_IN_INTERVAL. */
+	/**
+	 * @brief Enable the INTR IN notification endpoint (0: Disable, 1: Enable).
+	 * @details When disabled the class exposes no INTR IN endpoint, the communication
+	 *          interface reports bNumEndpoints 0, and @ref usbd_cdc_acm_notify_serial_state
+	 *          fails. Saves one endpoint and its TxFIFO for a host that never reads
+	 *          SERIAL_STATE.
+	 */
+	u8  notify_en : 1;
+	/**
+	 * @brief Transmit directly from the caller's buffer instead of copying (0: Disable, 1: Enable).
+	 * @details Avoids one memcpy per BULK IN transfer, but the caller's buffer shall be
+	 *          @ref USB_DMA_ALIGNED and shall stay valid and unmodified until the
+	 *          `transmitted` callback reports completion.
+	 */
+	u8  bulk_in_zero_copy : 1;
+} usbd_cdc_acm_config_t;
+
+/**
+ * @brief Structure for CDC ACM notifications sent to the host.
+ * @details This is a packed structure used for sending notifications like SERIAL_STATE
+ *          over the INTERRUPT IN endpoint.
+ */
+typedef struct {
+	u8 bmRequestType;                  /**< D7: Data transfer direction (1=Device-to-Host), D6-5: Type (1=Class), D4-0: Recipient (1=Interface). */
+	u8 bNotificationType;              /**< Notification code, e.g., `USB_CDC_ACM_NOTIFY_SERIAL_STATE`. */
+	u16 wValue;                        /**< Varies by notification. For SERIAL_STATE, it's 0. */
+	u16 wIndex;                        /**< Interface number. */
+	u16 wLength;                       /**< Size of the notification data payload. */
+	u8 buf[USB_CDC_ACM_INTR_IN_DATA_SIZE]; /**< Notification data payload. */
+} __PACKED usbd_cdc_acm_ntf_t;
+
+/**
+ * @brief Structure containing callback functions for the CDC ACM class.
+ * @details The user application should provide an instance of this structure
+ *          to handle class-specific events.
+ */
+typedef struct {
+	/**
+	 * @brief Called when the CDC ACM class driver initialization for application resource setup.
+	 * @return 0 on success, non-zero on failure.
+	 */
+	int (*init)(void);
+
+	/**
+	 * @brief Called when the CDC ACM device is de-initialized for resource cleanup.
+	 * @return 0 on success, non-zero on failure.
+	 */
+	int (*deinit)(void);
+
+	/**
+	 * @brief Called to handle class-specific SETUP requests.
+	 * @note   This function is called within an interrupt service routine (ISR) context;
+	 *         time-consuming operations (e.g., `malloc`, `rtos_sema_take`) are not permitted.
+	 * @param[in] req: Pointer to the setup request packet. For a device-to-host request with a
+	 *            data stage, buf holds at least wLength bytes and wLength never exceeds the
+	 *            host's: write at most wLength bytes.
+	 * @param[out] buf: Pointer to a buffer for data stage of control transfers.
+	 * @return 0 on success, non-zero on failure.
+	 */
+	int (*setup)(usb_setup_req_t *req, u8 *buf);
+
+	/**
+	 * @brief Called when new data is received from the host on the BULK OUT endpoint.
+	 * @note   This function is called within an interrupt service routine (ISR) context;
+	 *         time-consuming operations (e.g., `malloc`, `rtos_sema_take`) are not permitted.
+	 * @param[in] buf: Pointer to the received data buffer.
+	 * @param[in] len: Length of the received data in bytes.
+	 * @return 0 on success, non-zero on failure.
+	 */
+	int (*received)(u8 *buf, u32 len);
+
+	/**
+	 * @brief Called when a data transmission to the host on the BULK IN endpoint is complete.
+	 * @note   This function is called within an interrupt service routine (ISR) context;
+	 *         time-consuming operations (e.g., `malloc`, `rtos_sema_take`) are not permitted.
+	 * @param[in] status: The status of the transmission.
+	 */
+	void (*transmitted)(int status);
+
+	/**
+	 * @brief Called when USB attach status changes for application to support hot-plug events.
+	 * @note   This function is called within an interrupt service routine (ISR) context;
+	 *         time-consuming operations (e.g., `malloc`, `rtos_sema_take`) are not permitted.
+	 * @param[in] old_status: The previous attach status.
+	 * @param[in] status: The new attach status.
+	 */
+	void (*status_changed)(u8 old_status, u8 status);
+
+	/**
+	 * @brief Called when the USB device resumes from suspend (wakeup).
+	 * @note   This function is called within an interrupt service routine (ISR) context;
+	 *         time-consuming operations (e.g., `malloc`, `rtos_sema_take`) are not permitted.
+	 * @details Indicates that the USB bus is active again and the upper layer can resume normal TRX.
+	 */
+	void (*wakeup)(void);
+} usbd_cdc_acm_cb_t;
+
+/**
+ * @brief Structure representing the CDC ACM device instance.
+ */
+typedef struct {
+	const usbd_cdc_acm_config_t *cfg; /**< Pointer to the class configuration (set by init). */
+	const usbd_cdc_acm_cb_t *cb;      /**< Pointer to the user-defined callback structure. */
+	usb_dev_t *dev;             /**< Pointer to the USB device instance. */
+	usbd_ep_t ep_bulk_in;       /**< BULK IN endpoint structure. */
+	usbd_ep_t ep_bulk_out;      /**< BULK OUT endpoint structure. */
+	usbd_ep_t ep_intr_in;       /**< INTERRUPT IN endpoint structure. */
+	usb_setup_req_t ctrl_req;   /**< Stores the current control request (byte-packed). */
+	u8 ctrl_req_pending;        /**< 1 if ctrl_req is waiting for its EP0 OUT data stage. */
+	u8 from_composite;          /**< Flag indicating if part of a composite device. */
+	u8 if_base;                 /**< First interface number of this class; 0 in standalone mode
+	                                 unless the composite framework rebases it via
+	                                 set_interface_base(). */
+	u8 itf_str_idx;             /**< iInterface string index from usbd_add_string(), 0 for none. */
+} usbd_cdc_acm_dev_t;
+
+/** @} End of Device_CDC_ACM_Types group */
+/** @} End of USB_Device_Types group */
+
+/* Exported macros -----------------------------------------------------------*/
+
+/* Exported variables --------------------------------------------------------*/
+
+/* Exported functions --------------------------------------------------------*/
+
+/** @addtogroup USB_Device_Functions USB Device Functions
+ * @{
+ */
+/** @addtogroup Device_CDC_ACM_Functions Device CDC ACM Functions
+ * @{
+ */
+
+/**
+ * @brief Initializes class driver as a standalone device.
+ * @param[in] cb: Pointer to the user-defined callback structure.
+ * @param[in] cfg: Pointer to the class configuration. See @ref usbd_cdc_acm_config_t.
+ * @return 0 on success, non-zero on failure.
+ */
+int usbd_cdc_acm_init(const usbd_cdc_acm_cb_t *cb, const usbd_cdc_acm_config_t *cfg);
+
+#ifdef CONFIG_USBD_COMPOSITE
+/**
+ * @brief Initializes class driver as part of a composite device.
+ * @param[in] cb: Pointer to the user-defined callback structure.
+ * @param[in] cfg: Pointer to the class configuration. See @ref usbd_cdc_acm_config_t.
+ * @return 0 on success, non-zero on failure.
+ */
+int usbd_composite_cdc_acm_init(const usbd_cdc_acm_cb_t *cb, const usbd_cdc_acm_config_t *cfg);
+#endif
+
+/**
+ * @brief De-initializes the CDC ACM class driver.
+ * @note  Call it in task context, once no other task is inside usbd_cdc_acm_transmit() or
+ *        usbd_cdc_acm_notify_serial_state(): the TX buffers they write to are released here.
+ * @note  Composite mode: call it after @ref usbd_composite_deinit. Before that the class is
+ *        still reachable from the USB ISR, so the call returns at once and releases nothing.
+ * @return None. This is a teardown path: apart from the composite case above, the class is always
+ *         unregistered and every resource it owns released, nothing for the caller to recover from.
+ */
+void usbd_cdc_acm_deinit(void);
+
+/**
+ * @brief Transmits data to the host over the BULK IN endpoint.
+ * @note  At most @ref usbd_cdc_acm_config_t::bulk_in_xfer_size bytes are sent per call, a longer
+ *        len is cut to that size.
+ *        The ZLP terminating a transfer of a multiple of the MPS is appended by the core.
+ * @param[in] buf: Pointer to the data buffer to be transmitted, not NULL.
+ * @param[in] len: Length of the data in bytes, not 0.
+ * @return 0 on success, -RTK_ERR_BADARG for a NULL buf or a zero len, -RTK_ERR_BUSY while the
+ *         previous transfer is in flight, -RTK_ERR_IO when the device is not configured, other
+ *         non-zero on failure.
+ */
+int usbd_cdc_acm_transmit(const u8 *buf, u32 len);
+
+/**
+ * @brief Sets new line coding properties over the INTR IN endpoint.
+ * @note  Requires @ref usbd_cdc_acm_config_t::notify_en, otherwise the class owns no
+ *        INTR IN endpoint and the call fails.
+ * @param[in] serial_state: New line coding properties.
+ * @return 0 on success, -RTK_ERR_BUSY while the previous notification is in flight, -RTK_ERR_IO when
+ *         the device is not configured, other non-zero on failure.
+ */
+int usbd_cdc_acm_notify_serial_state(u16 serial_state);
+
+/** @} End of Device_CDC_ACM_Functions group */
+/** @} End of USB_Device_Functions group */
+
+/** @} End of USB_Device_API group */
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* USBD_CDC_ACM_H */

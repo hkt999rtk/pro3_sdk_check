@@ -1,0 +1,74 @@
+
+//tool_version:1.4.35
+
+#ifndef _BLC_L_H_INC_
+#define _BLC_L_H_INC_
+
+#include <isp_reg.h>
+#include <isp_reg_base.h>
+
+#define BLC_BLC_OFFSET_R (BLC_L_BASE_ADDR + 0x00000080) //0x00001c80
+#define BLC_BLC_OFFSET_G1 (BLC_L_BASE_ADDR + 0x00000084) //0x00001c84
+#define BLC_BLC_OFFSET_G2 (BLC_L_BASE_ADDR + 0x00000088) //0x00001c88
+#define BLC_BLC_OFFSET_B (BLC_L_BASE_ADDR + 0x0000008c) //0x00001c8c
+#define BLC_BLC_OFFSET_GAIN_R (BLC_L_BASE_ADDR + 0x00000090) //0x00001c90
+#define BLC_BLC_OFFSET_GAIN_G1 (BLC_L_BASE_ADDR + 0x00000094) //0x00001c94
+#define BLC_BLC_OFFSET_GAIN_G2 (BLC_L_BASE_ADDR + 0x00000098) //0x00001c98
+#define BLC_BLC_OFFSET_GAIN_B (BLC_L_BASE_ADDR + 0x0000009c) //0x00001c9c
+#define BLC_SYNC (BLC_L_BASE_ADDR + 0x000000a4) //0x00001ca4
+
+/* Bits of BLC_BLC_OFFSET_R (0x00000080) */
+
+#define BLC_OFFSET_R_OFFSET 0
+#define BLC_OFFSET_R_BITS 10
+#define BLC_OFFSET_R_MASK (((1 << 10) - 1) << 0)
+
+/* Bits of BLC_BLC_OFFSET_G1 (0x00000084) */
+
+#define BLC_OFFSET_G1_OFFSET 0
+#define BLC_OFFSET_G1_BITS 10
+#define BLC_OFFSET_G1_MASK (((1 << 10) - 1) << 0)
+
+/* Bits of BLC_BLC_OFFSET_G2 (0x00000088) */
+
+#define BLC_OFFSET_G2_OFFSET 0
+#define BLC_OFFSET_G2_BITS 10
+#define BLC_OFFSET_G2_MASK (((1 << 10) - 1) << 0)
+
+/* Bits of BLC_BLC_OFFSET_B (0x0000008c) */
+
+#define BLC_OFFSET_B_OFFSET 0
+#define BLC_OFFSET_B_BITS 10
+#define BLC_OFFSET_B_MASK (((1 << 10) - 1) << 0)
+
+/* Bits of BLC_BLC_OFFSET_GAIN_R (0x00000090) */
+
+#define BLC_OFFSET_GAIN_R_OFFSET 0
+#define BLC_OFFSET_GAIN_R_BITS 12
+#define BLC_OFFSET_GAIN_R_MASK (((1 << 12) - 1) << 0)
+
+/* Bits of BLC_BLC_OFFSET_GAIN_G1 (0x00000094) */
+
+#define BLC_OFFSET_GAIN_G1_OFFSET 0
+#define BLC_OFFSET_GAIN_G1_BITS 12
+#define BLC_OFFSET_GAIN_G1_MASK (((1 << 12) - 1) << 0)
+
+/* Bits of BLC_BLC_OFFSET_GAIN_G2 (0x00000098) */
+
+#define BLC_OFFSET_GAIN_G2_OFFSET 0
+#define BLC_OFFSET_GAIN_G2_BITS 12
+#define BLC_OFFSET_GAIN_G2_MASK (((1 << 12) - 1) << 0)
+
+/* Bits of BLC_BLC_OFFSET_GAIN_B (0x0000009c) */
+
+#define BLC_OFFSET_GAIN_B_OFFSET 0
+#define BLC_OFFSET_GAIN_B_BITS 12
+#define BLC_OFFSET_GAIN_B_MASK (((1 << 12) - 1) << 0)
+
+/* Bits of BLC_SYNC (0x000000a4) */
+
+#define BLC_REG_LOAD_OFFSET 0
+#define BLC_REG_LOAD_BITS 1
+#define BLC_REG_LOAD_MASK (((1 << 1) - 1) << 0)
+
+#endif /* _BLC_L_H_INC_ */

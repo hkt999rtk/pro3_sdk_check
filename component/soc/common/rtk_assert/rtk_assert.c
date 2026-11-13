@@ -1,0 +1,61 @@
+/*
+ * Copyright (c) 2024 Realtek Semiconductor Corp.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include "stdio.h"
+#include "ameba_soc.h"
+
+void __rtos_critical_enter_os(void);
+void __rtos_critical_exit_os(void);
+
+extern void LOGUART_PutChar(u8 c);
+
+/* Print val in decimal without leading zeros.
+ * Out of line on purpose: inlined, its registers would be saved in the caller's frame. */
+__NO_INLINE
+void rtk_assert_print_dec(uint32_t val)
+{
+	uint32_t div = 1;
+
+	/* div = largest power of 10 that is not greater than val */
+	while (val / div >= 10) {
+		div *= 10;
+	}
+
+	/* print one digit per power of 10, most significant first */
+	do {
+		LOGUART_PutChar('0' + val / div);
+		val %= div;
+		div /= 10;
+	} while (div != 0);
+}
+
+void rtk_assert_print_str(const char *s)
+{
+	while (s != NULL && *s != '\0') {
+		LOGUART_PutChar(*s++);
+	}
+}
+
+/* Prints "Assert Error! <info>:<line>\r\n".
+ * A macro, not a function: an extra call level would add a stack frame to the assert path. */
+#define PRINT_ASSERT_MSG(info, line) do { \
+		rtk_assert_print_str("Assert Error! "); \
+		rtk_assert_print_str(info); \
+		rtk_assert_print_str(":"); \
+		rtk_assert_print_dec(line); \
+		rtk_assert_print_str("\r\n"); \
+	} while (0)
+
+__attribute__((weak)) void rtk_assert_hook(void) {}
+
+__NO_RETURN _OPTIMIZE_NONE_
+void vAssertCalled(const char *pcInfo, uint32_t ulLine)
+{
+	__rtos_critical_enter_os();
+	PRINT_ASSERT_MSG(pcInfo, ulLine);
+	rtk_assert_hook();
+	for (;;);
+}

@@ -1,0 +1,7 @@
+{
+	"sections": [".psram.stage1.dummy", ".psram.stage1.vector", ".psram.stage1.text", ".psram.stage1.rodata", ".psram.bkup.stage1.data", ".preinit_array", ".init_array", ".fini_array", ".ARM.extab", ".ARM.exidx"],
+	"entry": "vp_loading_stage1_start",
+	"align_size": 128,
+	"boot_idx": "0x01010101"
+}
+ 

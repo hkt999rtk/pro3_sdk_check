@@ -1,0 +1,9 @@
+{
+    global:
+        viphal_*;
+        viphal_os_*;
+        viphal_hardware_*;
+
+    local:
+        *;
+};

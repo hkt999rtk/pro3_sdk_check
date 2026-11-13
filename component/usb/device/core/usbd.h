@@ -1,0 +1,784 @@
+/*
+ * Copyright (c) 2024 Realtek Semiconductor Corp.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#ifndef USBD_H
+#define USBD_H
+
+/* Includes ------------------------------------------------------------------*/
+
+#include "usb_os.h"
+#include "usb_ch9.h"
+#include "usb_def.h"
+#include "usb_diag.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/** @addtogroup USB_Device_API USB Device API
+ *  @{
+ */
+
+/* Exported defines ----------------------------------------------------------*/
+
+/** @addtogroup USB_Device_Constants USB Device Constants
+ * @{
+ */
+/** @addtogroup Device_Core_Constants Device Core Constants
+ * @{
+ */
+
+#define USBD_TP_TRACE_DEBUG             0U  /**<This define is used to trace transfer performance */
+
+/* USB descriptor configurations */
+#define USBD_MAX_NUM_INTERFACES			16U
+#define USBD_MAX_NUM_CONFIGURATION		16U
+
+/** @brief Minimum EP0 control transfer buffer length in bytes.
+ *  @details Used when @ref usbd_config_t::ctrl_xfer_buf_len is 0 or smaller.
+ *           Shall be >= USBD_MIN_CTRL_BUF_LEN to handle standard enumeration.
+ */
+#define USBD_MIN_CTRL_BUF_LEN			512U
+
+/**
+ * @brief USB device string descriptor index.
+ * @{
+ */
+#define USBD_IDX_LANGID_STR				0x00U
+#define USBD_IDX_MFC_STR				0x01U
+#define USBD_IDX_PRODUCT_STR			0x02U
+#define USBD_IDX_SERIAL_STR				0x03U
+#define USBD_IDX_MS_OS_STR				0xEEU
+/** @} */
+
+/** @brief Number of class/application string descriptors held by the core string table.
+ *  @details The table covers the strings registered through @ref usbd_add_string only, whose
+ *           indices start right above @ref USBD_IDX_SERIAL_STR. The device-global strings
+ *           (LANGID, manufacturer, product, serial number) occupy the fixed indices below and
+ *           are answered straight from @ref usbd_dev_info_t, so they consume no slot.
+ */
+#define USBD_MAX_STR_NUM				8U
+
+/** @brief First string index handed out by @ref usbd_add_string. */
+#define USBD_CLASS_STR_IDX_BASE			(USBD_IDX_SERIAL_STR + 1U)
+
+/** @brief Length in characters of the serial number @ref usbd_get_uuid_sn builds, without the
+ *         terminator.
+ *  @note  This sizes the buffer for that helper only. A serial number assigned to
+ *         @ref usbd_dev_info_t::sn_str is referenced by pointer, so it may be of any length
+ *         that still fits a string descriptor, refer to @ref usbd_get_str_descriptor.
+ */
+#define USBD_SN_STR_LEN					16U
+
+/**
+ * @brief USB device interrupt enable flag.
+ * @{
+ */
+#define USBD_SOF_INTR                   (BIT0) /**< Start of (micro)Frame Interrupt (GINTSTS.Sof). */
+/** @} */
+
+/** @} End of Device_Core_Constants group */
+/** @} End of USB_Device_Constants group */
+
+/* Exported types ------------------------------------------------------------*/
+
+/** @addtogroup USB_Device_Types USB Device Types
+ * @{
+ */
+/** @addtogroup Device_Core_Types Device Core Types
+ * @{
+ */
+
+/**
+ * @brief USB device state.
+ */
+typedef enum {
+	USBD_STATE_INIT       = 0U,                /**< Initial state, before enumeration. */
+	USBD_STATE_DEFAULT    = 1U,                /**< Default state, after reset. */
+	USBD_STATE_ADDRESSED  = 2U,                /**< Addressed state, after `SET_ADDRESS`. */
+	USBD_STATE_CONFIGURED = 3U,                /**< Configured state, after `SET_CONFIGURATION`. */
+	USBD_STATE_SUSPENDED  = 4U,                /**< Suspended state. */
+} usbd_state_t;
+
+/**
+ * @brief  USB device attach status.
+ */
+typedef enum {
+	USBD_ATTACH_STATUS_INIT     = 0U,          /**< Initial status. */
+	USBD_ATTACH_STATUS_ATTACHED = 1U,          /**< Device is attached to the host. */
+	USBD_ATTACH_STATUS_DETACHED = 2U,          /**< Device is detached from the host. */
+} usbd_attach_status_t;
+
+/* Forward declarations to resolve circular dependencies. */
+struct _usbd_class_driver_t;
+
+/**
+ * @brief Defines the structure for an USB endpoint.
+ */
+typedef struct {
+	u8 *xfer_buf;                             /**< Pointer to the transfer buffer. */
+	u32 xfer_len;                             /**< Total length of the data to transfer. */
+	u32 xfer_buf_len;                         /**< Capacity of the class transfer buffer, 0 if unknown.
+                                                   For OUT endpoints it shall cover the whole DMA window,
+                                                   refer to @ref usbd_ep_receive. */
+	usb_ep_info_t info;                       /**< Endpoint information: addr, mps, type, binterval, interval. */
+	__IO u8 xfer_state;                       /**< Current state of the class transfer. */
+	__IO u8 tx_zlp;                           /**< Flag to indicate if a Zero-Length Packet should be sent. */
+	u8 dis_zlp : 1;                           /**< Flag to disable Zero-Length Packet for the current transfer. */
+	u8 skip_dcache_pre_clean : 1;             /**< Skip `DCache_Clean` in TRX API and it will be called in class. */
+	u8 skip_dcache_post_invalidate : 1;       /**< Skip `DCache_Invalidate` when RX complete and it will be called in class. */
+} usbd_ep_t;
+
+/**
+ * @brief Defines the device-global descriptor parameters shared by every class.
+ * @details The core rewrites the fields below into the device and configuration descriptors
+ *          returned by the class driver, so a class never has to know them. Every field is
+ *          optional: a zero value keeps the class template default, which makes the whole
+ *          structure omissible for an application happy with the defaults.
+ *          String pointers are stored, not copied, so they shall remain valid until
+ *          @ref usbd_deinit.
+ * @note  @ref usbd_init copies this structure into @ref usb_dev_t::info and resolves every
+ *        default there, and the descriptor paths read that copy on each request rather than
+ *        snapshotting it. A class holding values latched in hardware may therefore overwrite
+ *        any field of `dev->info` after @ref usbd_init and before enumeration, and the core
+ *        reports the overwritten value. `usbd_whc` does so with its OTP parameters.
+ */
+typedef struct {
+	const char *mfg_str;                      /**< iManufacturer string, NULL uses "Realtek", empty reports none. */
+	const char *prod_str;                     /**< iProduct string, NULL uses "Realtek USB Device", empty reports none. */
+	/**
+	 * @brief iSerialNumber string, NULL or empty reports no serial number.
+	 * @note  There is deliberately no default: reading the chip UUID costs several kilobytes
+	 *        of stack on some SoCs, which @ref usbd_init cannot impose on its caller. An
+	 *        application wanting a UUID-derived serial number calls @ref usbd_get_uuid_sn from
+	 *        a context with enough stack and assigns the result here.
+	 */
+	const char *sn_str;
+	u16 vid;                                  /**< idVendor, 0 uses `USB_VID`. */
+	u16 pid;                                  /**< idProduct, 0 uses `USB_PID`. */
+	u16 bcd_device;                           /**< bcdDevice, 0 keeps the class template value. */
+	u16 lang_id;                              /**< wLANGID of the LANGID string descriptor, 0 uses 0x0409 (English US). */
+	u8 max_power;                             /**< bMaxPower in 2mA units, 0 keeps the class template value. */
+	/**
+	 * @brief USB device speed mode. See @ref usb_speed_type_t.
+	 * - `USB_SPEED_HIGH`: USB 2.0 High-Speed PHY, the default (value 0).
+	 * - `USB_SPEED_HIGH_IN_FULL`: USB 2.0 PHY driven in Full-Speed mode, for a low bandwidth
+	 *   application such as UAC 1.0 that has to run Full Speed on an HS-capable SoC.
+	 * - `USB_SPEED_FULL`: USB 1.1 Full-Speed transceiver.
+	 * @note  An application normally leaves this 0 and lets the core pick: on an FS-only SoC
+	 *        (`CONFIG_SUPPORT_USB_FS_ONLY`) @ref usbd_init clamps any High-Speed request down
+	 *        to `USB_SPEED_FULL`, so only a class that must down-shift a capable PHY by itself
+	 *        needs to set it.
+	 */
+	u8 speed : 2;
+	u8 self_powered : 1;                      /**< Power source: 0 for bus-powered, 1 for self-powered. */
+	u8 remote_wakeup_en : 1;                  /**< Advertise remote wakeup capability (0: Disable, 1: Enable). */
+} usbd_dev_info_t;
+
+/**
+ * @brief Defines the core driver configuration parameters for the USB device.
+ */
+typedef struct {
+#ifdef CONFIG_SUPPORT_USB_SHARED_DFIFO
+	/**
+	 * @brief Threshold count of EPMis interrupts for non-periodic IN transfers.
+	 * @details If the mismatch count exceeds this value, the GINTSTS.EPMis interrupt is handled.
+	 */
+	u32 nptx_max_epmis_cnt;
+#else
+	u16 rx_fifo_depth;                        /**< RxFIFO depth in dwords, min value 16, must not exceed hardware limits(Dedicated FIFO mode only). */
+
+	/**
+	 * @brief Depth of TxFIFO n (for n=1 to USB_MAX_ENDPOINTS-1) in dwords which must not exceed hardware limits.
+	 * @details ptx_fifo_depth[i] corresponds to TxFIFO i+1 (Dedicated FIFO mode only).
+	 * @note
+	 *    - For SoCs with shared USB FIFO, no FIFO depth configuration is required.
+	 *    - For SoCs with dedicated USB FIFO, observe the following constraint:
+	 *      rx_fifo_depth + all ptx_fifo_depth[n] <= Hardware total FIFO depth.
+	 *      Each used TxFIFO must be at least 16 dwords.
+	 *    - For SoCs with dedicated USB FIFO, when an ISOC IN packet is too large for its TxFIFO,
+	 *      enable the ISOC TX threshold so the core can transmit before a whole packet is buffered.
+	 *      ISOC used TxFIFO must be <= MPS.
+	 */
+	u16 ptx_fifo_depth[USB_MAX_ENDPOINTS - 1];
+#endif
+	/**
+	 * @brief Control transfer buffer length in bytes for EP0 IN/OUT.
+	 * @details Defines the size of the shared EP0 transfer buffer allocated in @ref usbd_init.
+	 *          If set to 0 or less than @ref USBD_MIN_CTRL_BUF_LEN, @ref USBD_MIN_CTRL_BUF_LEN is used.
+	 *          Set this parameter to an appropriate value especially when defining a large device descriptor for a composite device.
+	 */
+	u16 ctrl_xfer_buf_len;
+	/**
+	 * @brief Enables extra interrupts.
+	 * @details Optional USB interrupt enable flags:
+	 * - `USBD_SOF_INTR`: For SOF-based timing synchronization.
+	 */
+	u16 ext_intr_enable;
+	u16 diag_depth;                           /**< Diag ring buffer depth in entries; 0 uses @ref USB_DIAG_DEFAULT_DEPTH. Requires `diag_enable`. */
+	u16 diag_poll_ms;                         /**< Diag task polling interval in ms; 0 uses @ref USB_DIAG_DEFAULT_POLL_MS. Requires `diag_enable`. */
+	usbd_dev_info_t info;                     /**< Device-global descriptor parameters. See @ref usbd_dev_info_t. */
+	u8 isr_priority;                          /**< Priority of the USB interrupt. */
+	/**
+	 * @brief Process the whole USB ISR, class callbacks included, inside the USB critical section (0: Disable, 1: Enable).
+	 * @details When enabled:
+	 *   - The callbacks run with interrupts disabled, and with the USB spinlock held under SMP:
+	 *     keep them short. Under SMP a USB API called on the other core spins with its
+	 *     interrupts disabled until the ISR has left.
+	 *   - A callback shall not take the critical section of another component, and no code
+	 *     shall call a USB API while holding one. Under SMP either order against the ISR
+	 *     on the other core deadlocks both cores.
+	 */
+	u8 isr_in_critical : 1;
+	u8 diag_enable : 1;                           /**< Enable USB diag ring buffer and polling task (0: Disable, 1: Enable).
+                                                      When disabled, error diagnostic information is silently lost.
+                                                      Enable this to capture USB error events for debugging. */
+#ifdef CONFIG_SUPPORT_USB_SHARED_DFIFO
+	u8 intr_use_ptx_fifo : 1;                     /**< Use Periodic TxFIFO for Interrupt IN transfers (Shared TxFIFO mode only). */
+#else
+	u8 isoc_use_ptx_threshold : 1;                /**< Use TX threshold (DTHRCTL) for ISOC IN transfers (Dedicated FIFO mode only). */
+#endif
+} usbd_config_t;
+
+/**
+ * @brief Defines the main USB device structure.
+ */
+typedef struct {
+	const struct _usbd_class_driver_t *driver; /**< Pointer to the active class driver. */
+	void *pcd;                               /**< Pointer to the low-level PCD (Platform Controller Driver) handle. */
+
+	u8 dev_state;                            /**< Current device state. See @ref usbd_state_t. */
+	u8 dev_old_state;                        /**< Previous device state. See @ref usbd_state_t. */
+	u8 dev_attach_status;                    /**< Current device attach status. See @ref usbd_attach_status_t. */
+	u8 dev_old_attach_status;                /**< Previous device attach status. See @ref usbd_attach_status_t. */
+	__IO u8 is_ready;                        /**< Device ready or not, 0-disabled, 1-enabled */
+	__IO u8 is_connected;                    /**< Device connected or not,0-disabled, 1-enabled */
+	u8 dev_config;                           /**< Current device configuration index. */
+	u8 test_mode;                            /**< Flag indicating if the device is in a test mode. */
+	u8 dev_speed : 2;                        /**< Current device speed. See @ref usb_speed_type_t. */
+	/**
+	 * @brief Remote wakeup authorized by the host (0: not authorized, 1: authorized).
+	 * @details Distinct from @ref usbd_dev_info_t::remote_wakeup_en, which only advertises the
+	 *          capability: this one tracks whether the host has actually enabled it through
+	 *          `SET_FEATURE(DEVICE_REMOTE_WAKEUP)`.
+	 */
+	u8 remote_wakeup : 1;
+
+	u8 str_cnt;                            /**< Number of entries used in `str_tbl`. */
+	/**
+	 * @brief Class/application string table, string index n is held by slot
+	 *        n - @ref USBD_CLASS_STR_IDX_BASE.
+	 * @details Holds the strings registered through @ref usbd_add_string, which stores
+	 *          pointers only. The device-global indices below @ref USBD_CLASS_STR_IDX_BASE are
+	 *          answered from `info` instead and take no slot here.
+	 */
+	const char *str_tbl[USBD_MAX_STR_NUM];
+
+	usbd_ep_t ep0_in;                        /**< Control endpoint 0 IN. */
+	usbd_ep_t ep0_out;                       /**< Control endpoint 0 OUT. */
+	/**
+	 * @brief Device-global descriptor parameters, with every default already resolved.
+	 * @details Copied from @ref usbd_config_t::info by @ref usbd_init, which substitutes the
+	 *          defaults once so that the descriptor and string paths, both running in ISR
+	 *          context, never have to test for one.
+	 */
+	usbd_dev_info_t info;
+
+#if USBD_TP_TRACE_DEBUG
+	/* Device task time debug params, enable by `tp_trace` in @ref usbd_config_t */
+	__IO u64 isr_process_time_max;           /**< [Debug] Maximum ISR handler processing time */
+	__IO u64 isr_process_time;               /**< [Debug] Current ISR handler processing time */
+	__IO u64 isr_enter_period_max;           /**< [Debug] Maximum interval between two consecutive ISR processing */
+	__IO u64 isr_enter_period;               /**< [Debug] Current time between last two consecutive ISR processing */
+	__IO u64 isr_enter_time;                 /**< [Debug] Timestamp of current ISR handler entry */
+#endif
+} usb_dev_t;
+
+/**
+ * @brief Defines the structure for the USB class driver callbacks.
+ * @note
+ *    All the device class driver callback functions are invoked in interrupt context.
+ *    Time-consuming or blocking operations must not be executed within these callback functions.
+ */
+typedef struct _usbd_class_driver_t {
+	/**
+	 * @brief Callback to get a descriptor during enumeration when host requests USB descriptors.
+	 * @note
+	 *    This callback is called within an interrupt service routine (ISR) context;
+	 *     time-consuming operations (e.g., `malloc`, `rtos_sema_take`) are not permitted.
+	 *    The class driver must return the descriptor data buffer and length against the `wValue` value of host setup request:
+	 *     - `USB_DESC_TYPE_DEVICE`: Device Descriptor, mandatory.
+	 *     - `USB_DESC_TYPE_CONFIGURATION`: Configuration Descriptor, mandatory.
+	 *     - `USB_DESC_TYPE_DEVICE_QUALIFIER`: Device Qualifier Descriptor, required for dual-speed (FS/HS) devices                                                                                                     |
+	 *     - `USB_DESC_TYPE_OTHER_SPEED_CONFIGURATION`: Other Speed Configuration Descriptor, required for dual-speed (FS/HS) devices.
+	 *     - `USB_DESC_TYPE_STRING`: Not handled by the class: the core answers the language ID and the
+	 *       device strings from @ref usbd_dev_info_t, and the strings a class registers through
+	 *       @ref usbd_add_string. Only an index the core does not own (e.g. the 0xEE MS OS string) is
+	 *       forwarded here, return 0 if unsupported.
+	 * @param[in] dev: USB device.
+	 * @param[in] req: USB setup request.
+	 * @param[out] buf: Buffer to store the requested descriptor.
+	 * @param[in] buf_len: Capacity of `buf` in bytes. The class driver shall not write beyond it.
+	 * @note
+	 *    `buf_len` describes the physical capacity of `buf` only. It must not be used to truncate a
+	 *     descriptor: a partial configuration descriptor whose `wTotalLength` disagrees with the
+	 *     returned bytes is illegal per USB 2.0 section 9.4.3. If the descriptor does not fit,
+	 *     the class driver shall return 0 so that the core stalls EP0.
+	 *    Short reads requested by the host through `wLength` are handled by the core, not here;
+	 *     the class driver always reports the full descriptor length.
+	 * @return The actual length of the descriptor, or 0 on error / insufficient buffer.
+	 */
+	u16(*get_descriptor)(usb_dev_t *dev, usb_setup_req_t *req, u8 *buf, u16 buf_len);
+
+	/**
+	 * @brief Callback to set the device configuration.
+	 * @note
+	 *    This callback is called within an interrupt service routine (ISR) context;
+	 *     time-consuming operations (e.g., `malloc`, `rtos_sema_take`) are not permitted.
+	 *    Called upon `SET_CONFIGURATION` request in ADDRESSED state. The device class driver must:
+	 *     - Initialize endpoints via @ref usbd_ep_init.
+	 *     - Prepare first OUT transfer via @ref usbd_ep_receive.
+	 * @param[in] dev: USB device.
+	 * @param[in] config: The configuration index to be set.
+	 * @return 0 on success, non-zero on failure.
+	 */
+	int (*set_config)(usb_dev_t *dev, u8 config);
+
+	/**
+	 * @brief Callback to clear the device configuration.
+	 * @note
+	 *    This callback is called within an interrupt service routine (ISR) context;
+	 *     time-consuming operations (e.g., `malloc`, `rtos_sema_take`) are not permitted.
+	 *    Called upon:
+	 *      - Core driver receives `SET_CONFIGURATION` control request in CONFIGURED state and needs to switch configuration.
+	 *      - Core driver receives `SET_CONFIGURATION` control request in non-ADDRESSED/CONFIGURED state.
+	 *      - Core driver processes enumeration complete interrupt (GINTSTS.EnumDone).
+	 *      - Core driver processes Session end interrupt (GOTGINT.SesEndDet).
+	 *      - USB core driver API @ref usbd_deinit is called.
+	 *    Typically, the device class driver shall call @ref usbd_ep_deinit to deinitialize the endpoints.
+	 * @param[in] dev: USB device.
+	 * @param[in] config: The configuration index to be cleared.
+	 * @return None. This is a teardown path, the bus is already gone or the configuration
+	 *         must drop to zero, so the core cannot act on a failure. Release best effort.
+	 */
+	void (*clear_config)(usb_dev_t *dev, u8 config);
+
+	/**
+	 * @brief Callback to handle class-specific or vendor-specific setup requests at control transfer setup phase.
+	 * @note
+	 *    This callback is called within an interrupt service routine (ISR) context;
+	 *     time-consuming operations (e.g., `malloc`, `rtos_sema_take`) are not permitted.
+	 * @details
+	 *     - Standard interface requests (`SET_INTERFACE/GET_INTERFACE/GET_STATUS`).
+	 *       Ref USB 2.0 §9.4.10: on `SET_INTERFACE` the endpoints of the interface addressed by
+	 *       wIndex return to their default state, not halted and data toggle DATA0. The class
+	 *       shall call @ref usbd_ep_clear_stall for them, or re-initialize them if the new
+	 *       alternate setting differs. This also applies to an interface having the default
+	 *       setting only, hosts do send `SET_INTERFACE(0)` to such an interface.
+	 *     - Standard endpoint requests `SET_FEATURE/CLEAR_FEATURE` with `ENDPOINT_HALT`, which the
+	 *       core offers to the class before handling them itself. Handle one only if the endpoint
+	 *       address in the low byte of wIndex belongs to this class, and only if halting or
+	 *       unhalting requires class bookkeeping the core cannot do, e.g. re-arming an OUT
+	 *       transfer or resetting a protocol state machine. Return 0 to state that the halt state
+	 *       change is done, any non-zero value keeps the default core handling. The core has
+	 *       already validated the request and completes the status stage in both cases.
+	 *       A class which keeps its OUT endpoint armed while halted needs none of this.
+	 *     - Class-specific requests per relevant class specifications.
+	 *     - Vendor-defined requests for custom devices.
+	 *
+	 *     Status stage ownership, ref USB 2.0 §8.5.3: for a class or vendor request with
+	 *     wLength == 0, of any recipient, the core sends the status stage once this callback
+	 *     returns 0, so the class shall not transmit on EP0 IN itself. For a request with a
+	 *     data stage, the class arms EP0 IN or OUT before returning 0.
+	 * @param[in] dev: USB device.
+	 * @param[in] req: USB setup request.
+	 * @return 0 on success, non-zero on failure.
+	 */
+	int (*setup)(usb_dev_t *dev, usb_setup_req_t *req);
+
+	/**
+	 * @brief Callback invoked at the Start-of-Frame (SOF).
+	 * @note
+	 *    This callback is called within an interrupt service routine (ISR) context;
+	 *      time-consuming operations (e.g., `malloc`, `rtos_sema_take`) are not permitted.
+	 * @details Called upon SOF interrupt (GINTSTS.Sof) for timing-sensitive operations (e.g. UAC clock synchronization).
+	 * @param[in] dev: USB device.
+	 * @return None. Ref USB 2.0 8.4.3: the SOF token has no data or handshake phase, so the
+	 *         device has no way to report a failure to the host.
+	 */
+	void (*sof)(usb_dev_t *dev);
+
+	/**
+	 * @brief Callback invoked when an IN data transfer on EP0 is complete.
+	 * @note
+	 *    This callback is called within an interrupt service routine (ISR) context;
+	 *      time-consuming operations (e.g., `malloc`, `rtos_sema_take`) are not permitted.
+	 * @param[in] dev: USB device.
+	 * @param[in] status: Status of the completed transfer.
+	 * @return 0 if this class owns the endpoint, non-zero otherwise. Used by the composite
+	 *         dispatcher to keep iterating to the owning sub-function. The core itself ignores
+	 *         it: the data has already been ACKed by the host and cannot be recalled.
+	 */
+	int (*ep0_data_in)(usb_dev_t *dev, int status);
+
+	/**
+	 * @brief Callback invoked when an OUT data transfer on EP0 is complete.
+	 * @note
+	 *    This callback is called within an interrupt service routine (ISR) context;
+	 *      time-consuming operations (e.g., `malloc`, `rtos_sema_take`) are not permitted.
+	 *    The device driver does not need to re-enable the control OUT transfer since it is automatically done in core driver.
+	 * @param[in] dev: USB device.
+	 * @return 0 on success, non-zero on failure. Ref USB 2.0 8.5.3.1: the status stage carries
+	 *         the outcome of a control write, so a non-zero value makes the core protocol-stall
+	 *         EP0 instead of acknowledging the request.
+	 */
+	int (*ep0_data_out)(usb_dev_t *dev);
+
+	/**
+	 * @brief Callback invoked when a bulk/interrupt/isochronous IN data transfer on EP is complete.
+	 * @note
+	 *    This callback is called within an interrupt service routine (ISR) context;
+	 *      time-consuming operations (e.g., `malloc`, `rtos_sema_take`) are not permitted.
+	 *    The device class driver may mark endpoint ready for next transfer or retry failed transfers.
+	 * @param[in] dev: USB device structure.
+	 * @param[in] ep_addr: Endpoint address.
+	 * @param[in] status: Status of the completed transfer.
+	 * @return 0 if this class owns the endpoint, non-zero otherwise. Used by the composite
+	 *         dispatcher to keep iterating to the owning sub-function. The core itself ignores
+	 *         it: ref USB 2.0 8.4.6, leaving the endpoint unarmed already makes the controller
+	 *         NAK the next IN token, which is the correct "no data yet" response.
+	 */
+	int (*ep_data_in)(usb_dev_t *dev, u8 ep_addr, int status);
+
+	/**
+	 * @brief Callback invoked when a bulk/interrupt/isochronous OUT data transfer on EP is complete.
+	 * @note
+	 *    This callback is called within an interrupt service routine (ISR) context;
+	 *      time-consuming operations (e.g., `malloc`, `rtos_sema_take`) are not permitted.
+	 *    Typically, the device class driver shall:
+	 *      - Process received data via application callback.
+	 *      - Prepare next OUT transfer via @ref usbd_ep_receive.
+	 * @param[in] dev: USB device.
+	 * @param[in] ep_addr: Endpoint address.
+	 * @param[in] status: Status of the completed transfer.
+	 * @return 0 if this class owns the endpoint, non-zero otherwise. Used by the composite
+	 *         dispatcher to keep iterating to the owning sub-function. The core itself ignores
+	 *         it: ref USB 2.0 8.4.6, leaving the endpoint unarmed already makes the controller
+	 *         NAK the next OUT token, which is the correct flow-control response, and a
+	 *         functional stall would break the class protocol instead.
+	 */
+	int (*ep_data_out)(usb_dev_t *dev, u8 ep_addr, u32 len);
+
+	/**
+	 * @brief Callback invoked when USB status change. See @ref usbd_attach_status_t.
+	 * @note
+	 *    This callback is called within an interrupt service routine (ISR) context;
+	 *      time-consuming operations (e.g., `malloc`, `rtos_sema_take`) are not permitted.
+	 * @details Called upon connection state changed for hot-plug support (e.g. do reinitialization on host disconnection)
+	 * @param[in] dev: USB device.
+	 * @param[in] old_status: Previous status of USB device.
+	 * @param[in] status: Current status of USB device.
+	 */
+	void (*status_changed)(usb_dev_t *dev, u8 old_status, u8 status);
+
+	/**
+	 * @brief Callback invoked when the device resumes from USB suspend (wakeup).
+	 * @note
+	 *    This callback is called within an interrupt service routine (ISR) context;
+	 *      time-consuming operations (e.g., `malloc`, `rtos_sema_take`) are not permitted.
+	 * @details Called upon resume from suspend (WKUINT or SOF detection),
+	 *          indicating that the USB bus is active and the upper layer can resume normal TRX.
+	 * @param[in] dev: USB device.
+	 */
+	void (*wakeup)(usb_dev_t *dev);
+
+	/**
+	 * @brief Callback to inform the class of its interface number base.
+	 * @note
+	 *    Optional, used by the composite framework only; never called in standalone mode,
+	 *    where the base is implicitly 0.
+	 *    The composite framework renumbers every sub-function's interfaces to
+	 *    base..base+bNumInterfaces-1. A class implementing this callback shall add base to
+	 *    every interface number it emits OUTSIDE the standard Interface and IAD descriptors,
+	 *    which the framework rebases itself, namely:
+	 *      - class-specific descriptor fields cross-referencing its own interfaces
+	 *        (CDC Union bMasterInterface/bSlaveInterface0, CDC Call Management
+	 *        bDataInterface, UAC1 AC Header baInterfaceNr[], UVC VC Header baInterfaceNr[]);
+	 *      - interface numbers carried in class notification payloads (Ref CDC 1.2 6.3).
+	 *    A class shall NOT add base to wIndex of an incoming setup request: the framework
+	 *    already rebases interface-recipient requests to the class-local interface number.
+	 *    A class whose descriptors carry no cross-interface reference and which sends no
+	 *    notification naming an interface leaves this callback NULL.
+	 *    Called before every configuration descriptor build and on set_config, always with
+	 *    the same base, so the class only has to store it.
+	 * @param[in] base: First interface number assigned to this class.
+	 */
+	void (*set_interface_base)(u8 base);
+} usbd_class_driver_t;
+
+/** @} End of Device_Core_Types group */
+/** @} End of USB_Device_Types group */
+
+/* Exported macros -----------------------------------------------------------*/
+
+/* Exported variables --------------------------------------------------------*/
+
+/* Exported functions --------------------------------------------------------*/
+
+/** @addtogroup USB_Device_Functions USB Device Functions
+ * @{
+ */
+/** @addtogroup Device_Core_Functions_For_Applications Device Core Functions For Applications
+ * @{
+ */
+
+/**
+ * @brief Initialize USB device core driver with configuration.
+ * @param[in] cfg: USB device configuration.
+ * @return 0 on success, non-zero on failure.
+ */
+int usbd_init(const usbd_config_t *cfg);
+
+/**
+ * @brief Deinitialize USB device core driver.
+ * @note  Teardown always completes: every software resource owned by the core (EP0 transfer
+ *        buffer, PCD context, diag task, interrupt registration) is released even when the
+ *        controller refuses to stop, which is reported through the log only. The device can
+ *        therefore always be re-initialized with @ref usbd_init afterwards.
+ *        Task context only: a call in interrupt context is rejected with an error log and
+ *        leaves the stack untouched.
+ * @return None. Nothing is left for the caller to recover from, so no status is reported.
+ */
+void usbd_deinit(void);
+
+/**
+ * @brief Get USB device attach status.
+ * @return See @ref usbd_attach_status_t.
+ */
+int usbd_get_status(void);
+
+/**
+ * @brief Get USB device bus status.
+ * @param[out] status: Return 0 on success, with the status parameter containing USB bus status
+ *        represented as a bitwise combination of enumeration values:
+ *          - `USB_DEV_BUS_STATUS_DN` = BIT0,        D- line status bit.
+ *          - `USB_DEV_BUS_STATUS_DP` = BIT1,        D+ line status bit.
+ *          - `USB_DEV_BUS_STATUS_SUSPEND` = BIT2,  Suspend indication bit.
+ * @return 0 on success, non-zero on failure.
+ */
+int usbd_get_bus_status(u32 *status);
+
+/**
+ * @brief Register the sleep callbacks for USB device Clock Gating (CG).
+ * @details Registers the PMU sleep callbacks so the USB device can be suspended/resumed
+ *          when the AP enters/exits the low-power clock gated state.
+ *          Wakelock operations and wake event configuration are handled by the caller,
+ *          not inside this function.
+ */
+void usbd_cg_register(void);
+
+/**
+ * @brief Unregister the sleep callbacks for USB device Clock Gating (CG).
+ * @note  Wakelock operations are handled by the caller, not inside this function.
+ */
+void usbd_cg_unregister(void);
+
+/**
+ * @brief Sends a remote wakeup signal to the USB host to resume communication.
+ * @note  Task context only: this call blocks for about 8ms as required by the USB spec.
+ *        It fails unless the bus is suspended (USB 2.0 7.1.7.7).
+ * @note  USB 2.0 9.4.5 only allows a remote wakeup once the host has enabled it by
+ *        SET_FEATURE(DEVICE_REMOTE_WAKEUP). This call is kept permissive and still signals
+ *        when the host has not enabled it, only logging a warning, as some hosts never enable
+ *        the feature. A strictly compliant application shall not call it in that case.
+ * @return 0 on success, non-zero on failure.
+ */
+int usbd_wake_host(void);
+
+/** @} End of Device_Core_Functions_For_Applications group */
+
+/** @addtogroup Device_Core_Functions_For_Classes Device Core Functions For Classes
+ * @{
+ */
+
+/**
+ * @brief Register a device class driver, called in class initialization function.
+ * @note  Call after @ref usbd_init, which clears the device context.
+ * @param[in] driver: USB class driver, its `get_descriptor` callback is mandatory.
+ * @return RTK_SUCCESS on success, -RTK_ERR_BADARG for a NULL driver or `get_descriptor`, or
+ *         before @ref usbd_init, otherwise the error starting the controller.
+ */
+int usbd_register_class(const usbd_class_driver_t *driver);
+
+/**
+ * @brief Un-register a class, called in class de-initialization function.
+ * @note  Task context only, same rule as @ref usbd_deinit.
+ * @return RTK_SUCCESS once the class is detached and the device driven to the detached state, also
+ *         when no class was registered. -RTK_ERR_BADARG when called in interrupt context: nothing
+ *         was done, the class is still reachable from the USB ISR, so the caller shall not
+ *         release anything.
+ */
+int usbd_unregister_class(void);
+
+/**
+ * @brief Initialize an endpoint.
+ * @note
+ *    Typically called in following scenarios:
+ *     - In the set_config callback function of the @ref usbd_class_driver_t.
+ *     - In the setup callback function of the @ref usbd_class_driver_t, when receiving specific
+ *      requests (such as `SET_INTERFACE`) that require endpoint (re-)initialization.
+ * @param[in] dev: USB device.
+ * @param[in] ep: USB endpoint.
+ * @return 0 on success, non-zero on failure.
+ */
+int usbd_ep_init(usb_dev_t *dev, usbd_ep_t *ep);
+
+/**
+ * @brief Deinitialize an endpoint.
+ * @note
+ *    Typically called in following scenarios:
+ *     - In the clear_config callback function of the @ref usbd_class_driver_t.
+ *     - In the setup callback function of the @ref usbd_class_driver_t, when receiving specific
+ *       requests (such as `SET_INTERFACE`) that require endpoint deinitialization.
+ *    Tolerates an endpoint that was never initialized, so a class may release its whole
+ *    endpoint set unconditionally.
+ * @param[in] dev: USB device.
+ * @param[in] ep: USB endpoint.
+ * @return None. This is a teardown path: the endpoint state is always released and an
+ *         invalid endpoint address is reported through the log.
+ */
+void usbd_ep_deinit(usb_dev_t *dev, usbd_ep_t *ep);
+
+/**
+ * @brief Initiates an IN transfer to the USB host through a specified endpoint.
+ * @note
+ *     - The transfer executes asynchronously: function return doesn't indicate completion.
+ *     - Check transfer status via ep_data_in/ep0_data_in callback of the @ref usbd_class_driver_t.
+ *     - Zero-Length Packet will be automatically transmitted as needed by device core driver.
+ * @param[in] dev: USB device.
+ * @param[in] ep: USB endpoint.
+ * @return 0 on success, non-zero on failure.
+ */
+int usbd_ep_transmit(usb_dev_t *dev, usbd_ep_t *ep);
+
+/**
+ * @brief  Prepares to receive OUT transfer data from the USB host through a specified endpoint.
+ * @note
+ *     - The transfer executes asynchronously: function return doesn't indicate completion.
+ *     - Retrieved data is available via the ep_data_out/ep0_data_out callback of the @ref usbd_class_driver_t.
+ *     - The hardware always receives in whole packets, so the DMA window is `xfer_len` rounded up
+ *       to a multiple of the DWORD aligned endpoint MPS (one such MPS when `xfer_len` is 0), refer
+ *       to usb_get_dma_len() and usb_get_max_payload_len(). The class shall provide a
+ *       @ref usbd_ep_t::xfer_buf of at least that capacity and report it via
+ *       @ref usbd_ep_t::xfer_buf_len, otherwise a host sending a longer packet than expected
+ *       overflows the buffer. Requests violating this are rejected when `xfer_buf_len` is set.
+ * @param[in] dev: USB device.
+ * @param[in] ep: USB endpoint.
+ * @return 0 on success, non-zero on failure.
+ */
+int usbd_ep_receive(usb_dev_t *dev, usbd_ep_t *ep);
+
+/**
+ * @brief Sets the specified endpoint to STALL state.
+ * @param[in] dev: USB device.
+ * @param[in] ep: USB endpoint.
+ * @return None. A stall is unconditional on an endpoint opened by the current configuration.
+ *         An invalid or unopened endpoint is a class programming error and is reported
+ *         through the log.
+ */
+void usbd_ep_set_stall(usb_dev_t *dev, usbd_ep_t *ep);
+
+/**
+ * @brief Clears the STALL state of the specified endpoint.
+ * @param[in] dev: USB device.
+ * @param[in] ep: USB endpoint.
+ * @return None. See @ref usbd_ep_set_stall.
+ */
+void usbd_ep_clear_stall(usb_dev_t *dev, usbd_ep_t *ep);
+
+/**
+ * @brief Checks whether the specified endpoint is in STALL state.
+ * @param[in] dev: USB device.
+ * @param[in] ep: USB endpoint.
+ * @return
+ *        - 1: The endpoint is stalled.
+ *        - 0: The endpoint is not stalled.
+ */
+int usbd_ep_is_stall(usb_dev_t *dev, usbd_ep_t *ep);
+
+/**
+ * @brief Register a string descriptor and get the index naming it.
+ * @details Lets a class or an application publish a string without knowing which indices the
+ *          other functions of the device already use, which is what the composite framework
+ *          needs. The returned index shall be emitted in the descriptor field naming the string
+ *          (`iInterface`, CDC ECM/NCM `iMACAddress`, ...); the core answers
+ *          `GET_DESCRIPTOR(String, index)` itself, so the class has nothing more to do.
+ *          The table holds @ref USBD_MAX_STR_NUM entries, all available to the classes and the
+ *          application: the device-global strings are answered from @ref usbd_dev_info_t and
+ *          take no slot.
+ * @note  The string is stored by pointer, not copied, so it shall remain valid until
+ *        @ref usbd_deinit. Registering the same pointer twice returns the same index and
+ *        consumes no extra slot. Shall be called from task context, after @ref usbd_init.
+ * @param[in] str: Pointer to the null-terminated UTF-8 string.
+ * @return The string index on success, 0 when `str` is NULL or the table is full. Index 0 is
+ *         reserved for the LANGID string descriptor and therefore doubles as the error value.
+ */
+u8 usbd_add_string(const char *str);
+
+/**
+ * @brief Get the device-global descriptor parameters, for a class that has to override them.
+ * @details Returns the resolved copy the core answers descriptor requests from, so a class
+ *          holding values latched in hardware may overwrite any field. `usbd_whc` does so with
+ *          its OTP parameters. An application configures these through
+ *          @ref usbd_config_t::info instead and has no need for this.
+ * @note  Shall be called from task context, after @ref usbd_init and before the device is
+ *        enumerated. String pointers are stored, not copied, so a string assigned here shall
+ *        remain valid until @ref usbd_deinit.
+ * @return Pointer to the device-global parameters, never NULL.
+ */
+usbd_dev_info_t *usbd_get_dev_info(void);
+
+/**
+ * @brief Build a serial number string from the chip UUID.
+ * @details Writes @ref USBD_SN_STR_LEN uppercase hex characters plus a terminator: UUID[0] in
+ *          the first 8, UUID[1] in the last 8. An unprogrammed UUID (all zeroes or all ones)
+ *          logs a warning and returns 0 with nothing written: leave @ref usbd_dev_info_t::sn_str
+ *          NULL then, a fixed fallback would not be unique among devices of the same VID/PID.
+ * @note  Reading the chip UUID costs several kilobytes of stack on some SoCs, which is why the
+ *        core does not do it by itself. Call this from task context with enough stack, e.g. the
+ *        application init thread, and assign the buffer to @ref usbd_dev_info_t::sn_str. The
+ *        buffer is referenced by pointer, so it shall remain valid until @ref usbd_deinit.
+ * @param[out] sn: Destination buffer.
+ * @param[in] len: Capacity of `sn` in bytes, shall be greater than @ref USBD_SN_STR_LEN.
+ * @return Number of characters written, 0 when `sn` is NULL, `len` is too small or the UUID
+ *         is unprogrammed.
+ */
+u8 usbd_get_uuid_sn(char *sn, u8 len);
+
+/**
+ * @brief Converts UTF-8 strings to UNICODE16-encoded USB string descriptors.
+ * @param[in] str: Pointer to the null-terminated source UTF-8 string.
+ * @param[out] desc: Formatted unicode string descriptor buffer where the USB descriptor will be written.
+ * @param[in] desc_len: Capacity of `desc` in bytes.
+ * @note  The destination buffer must accommodate twice the source length plus 2 bytes
+ *        (for the length, and type fields of string descriptor). Nothing is written when the
+ *        descriptor does not fit, or when its length would exceed the 255-byte `bLength` field.
+ *        Only the Basic Multilingual Plane is supported: a code point above U+FFFF, which
+ *        UTF-16 would have to encode as a surrogate pair, is rejected.
+ * @return The total length of the generated descriptor in bytes, or 0 on error.
+ */
+u16 usbd_get_str_descriptor(const char *str, u8 *desc, u16 desc_len);
+
+/** @} End of Device_Core_Functions_For_Classes group */
+/** @} End of USB_Device_Functions group */
+
+/** @} End of USB_Device_API group */
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* USBD_H */

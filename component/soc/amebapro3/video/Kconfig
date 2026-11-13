@@ -1,0 +1,59 @@
+menu "CONFIG VIDEO MODULES"
+
+    config VMODULE_AINR
+        bool "AINR"
+        default y
+
+    config VMODULE_ENCODER
+        bool "ENCODER"
+        default y
+
+    config VMODULE_ISP
+        bool "ISP"
+        default y
+
+    config VMODULE_NN
+        bool "NN"
+        default y
+
+    if VMODULE_NN
+        menu "NN Options"
+            config NNVMEM_NC_FOR_AP
+                bool "NN Video Memory Non-Cacheable for AP"
+                default y
+            config NNVMEM_NC_FOR_VP
+                bool "NN Video Memory Non-Cacheable for VP"
+                default y
+
+            config NN_FOR_AP
+                bool "NN Driver Run on AP"
+                default y
+        endmenu
+    endif
+
+    config VMODULE_SENSOR
+        bool "SENSOR"
+        default y
+
+    config VMODULE_GE
+        bool "GE"
+        default y
+
+    if !AMEBA_RLS
+    config VMODULE_ADDREMAP
+        bool "ADDREMAP"
+        default n
+
+    config VMODULE_SWISP2ENC
+        bool "SWISP2ENC"
+        default n
+
+    config VMODULE_TEMPLATE
+        bool "TEMPLATE"
+        default n
+
+    config VMODULE_TS
+        bool "TS"
+        default n
+    endif
+endmenu

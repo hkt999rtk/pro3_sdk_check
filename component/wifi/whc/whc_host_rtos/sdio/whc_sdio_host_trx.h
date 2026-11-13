@@ -1,0 +1,11 @@
+#ifndef __WHC_SDIO_HOST_TRX_H__
+#define __WHC_SDIO_HOST_TRX_H__
+
+#include "rtw_wifi_common.h"
+#include "rtw_skbuff.h"
+
+#define whc_host_send           whc_sdio_host_send_pkt
+
+int whc_sdio_host_send_pkt(int idx, struct eth_drv_sg *sg_list, int sg_len, int total_len, struct skb_raw_para *raw_para, u8 is_special_pkt);
+
+#endif /* __WHC_SDIO_HOST_TRX_H__ */

@@ -1,0 +1,10 @@
+if(ISP_CPU_MODE)
+	set(ispcontrollerdir ${CMAKE_CURRENT_SOURCE_DIR})
+	set(target isp_controller_interface)
+	add_library(${target} INTERFACE)
+	target_include_directories(${target} INTERFACE oslayer)
+	add_subdirectory(core)
+	add_subdirectory(oslayer)
+endif()
+
+add_subdirectory(api)

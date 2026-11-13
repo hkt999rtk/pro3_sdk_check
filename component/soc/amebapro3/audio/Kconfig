@@ -1,0 +1,13 @@
+menu "Audio VQE"
+
+choice
+    prompt "AEC algorithm"
+    default AUDIO_AEC_NEWAEC
+    config AUDIO_AEC_NEWAEC
+        bool "NEWAEC (CT-AEC)"
+        select NEWAEC
+endchoice
+
+config NEWAEC
+    bool
+endmenu

@@ -1,0 +1,35 @@
+comment "--- --------------CPU config Start------------"
+
+menu "CONFIG CHIP"
+    config CPU_HAS_FPU_FOR_VP
+        bool
+        default y
+
+    choice
+        prompt "ArmCore"
+        default ARM_CORE_CM4_FOR_VP
+        config ARM_CORE_CM4_FOR_VP
+            bool "ARM_CM4"
+			
+		if ARM_CORE_CM4_FOR_VP
+			config ARM_CORE_CM4_VP_FOR_VP
+				def_bool y		
+		endif
+		
+    endchoice
+endmenu
+
+config SUPPORT_FS_RW_FOR_VP
+        bool "Support File system R/W"
+        select WHC_NONE_FOR_VP
+        default n
+		
+config VP_MEDIA_EXAMPLE
+        bool "Build VP Media Example"
+        default n
+
+config SUPPORT_UVC_TUNING_FOR_VP
+        bool "Support UVC TUNING"
+        select VP_MEDIA_EXAMPLE
+        default n
+

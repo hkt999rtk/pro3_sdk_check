@@ -1,0 +1,15 @@
+# Local build output and development environments
+/build_*/
+/.venv/
+/.venv-*/
+/venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Machine-local files and environment secrets
+.DS_Store
+.env
+.env.*
+!.env.example
+!.env.sample

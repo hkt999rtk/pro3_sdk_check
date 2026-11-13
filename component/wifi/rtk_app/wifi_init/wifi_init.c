@@ -1,0 +1,107 @@
+/**
+  ******************************************************************************
+  * @file    wifi_init.c
+  * @author
+  * @version
+  * @date
+  * @brief
+  ******************************************************************************
+  * @attention
+  *
+  * This module is a confidential and proprietary property of RealTek and
+  * possession or use of this module requires written permission of RealTek.
+  *
+  * Copyright(c) 2024, Realtek Semiconductor Corporation. All rights reserved.
+  ******************************************************************************
+  */
+#include "ameba_soc.h"
+#ifdef CONFIG_WLAN
+#if defined(CONFIG_WHC_HOST) && !defined(CONFIG_WHC_INTF_IPC)
+#include "whc_host_api.h"
+#elif defined(CONFIG_WHC_INTF_IPC)
+#include "whc_ipc.h"
+#endif
+#include "rtw_skbuff.h"
+#if defined(CONFIG_LWIP_LAYER) && CONFIG_LWIP_LAYER
+#include "lwip_netconf.h"
+#endif
+#include "wifi_intf_drv_to_upper.h"
+
+#if !defined(CONFIG_WHC_INTF_IPC)
+#if defined(CONFIG_WHC_HOST)
+#include "whc_host.h"
+#else
+#include "whc_dev.h"
+#endif
+#endif
+
+#define WIFI_STACK_SIZE_INIT ((512 + 768) * 4)
+
+/**********************************************************************************************
+ *                                WHC host performs wifi init
+ *********************************************************************************************/
+#if defined(CONFIG_WHC_HOST)
+void wifi_init_thread(void *param)
+{
+	UNUSED(param);
+	wifi_set_task_size();
+#ifdef CONFIG_LWIP_LAYER
+	lwip_module_init();
+#endif
+
+	whc_host_init();
+
+#ifdef CONFIG_WHC_WIFI_API_PATH
+	wifi_on(RTW_MODE_STA);
+#endif
+
+	rtos_task_delete(NULL);
+}
+
+/**********************************************************************************************
+ *                                 WHC Device performs wifi init
+ *********************************************************************************************/
+#elif defined(CONFIG_WHC_DEV)
+void wifi_init_thread(void *param)
+{
+	UNUSED(param);
+	wifi_set_task_size();
+#if defined(CONFIG_LWIP_LAYER) && defined(CONFIG_WHC_DEV_TCPIP_KEEPALIVE)
+	lwip_module_init();
+#endif
+
+	whc_dev_init();
+	rtos_task_delete(NULL);
+}
+
+/**********************************************************************************************
+ *                               Single core mode performs wifi init
+ *********************************************************************************************/
+#elif defined(CONFIG_WHC_NONE)/*Single core processor do wifi init*/
+void wifi_init_thread(void *param)
+{
+	UNUSED(param);
+	wifi_set_task_size();
+#if defined(CONFIG_ARM_CORE_CM4) && defined(configENABLE_TRUSTZONE) && (configENABLE_TRUSTZONE == 1)
+	rtos_create_secure_context(configMINIMAL_SECURE_STACK_SIZE);
+#endif
+
+#ifdef CONFIG_LWIP_LAYER
+	lwip_module_init();
+#endif
+
+	wifi_on(RTW_MODE_STA);
+	/* Kill init thread after all init tasks done */
+	rtos_task_delete(NULL);
+}
+
+#endif
+
+void wifi_init(void)
+{
+	wifi_set_rom2flash();
+	if (rtos_task_create(NULL, ((const char *)"wifi_init_thread"), wifi_init_thread, NULL, WIFI_STACK_SIZE_INIT, 5) != RTK_SUCCESS) {
+		RTK_LOGS(TAG_WLAN_DRV, RTK_LOG_ERROR, "wifi_init failed\n");
+	}
+}
+#endif

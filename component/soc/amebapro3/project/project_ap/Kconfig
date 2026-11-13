@@ -1,0 +1,27 @@
+comment "--- --------------CPU config Start------------"
+
+menu "CONFIG CHIP" #DONE
+    choice
+        prompt "ArmCore"
+        default ARM_CORE_CA32_FOR_AP
+        config ARM_CORE_CA32_FOR_AP
+            bool "ARM_CA32"
+    endchoice
+
+    # Enable NEON (Advanced SIMD) support for ARM Cortex-A processors
+    config NEON_FOR_AP
+        bool
+        default y
+	# One core for CA32
+	config SMP_FOR_AP
+		bool
+		default n
+	config CORE_NUM_FOR_AP
+		int
+		default 1
+	config CPUS_NUM_FOR_AP
+		int
+		default 1
+endmenu
+
+

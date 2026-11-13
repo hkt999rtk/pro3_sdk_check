@@ -1,0 +1,260 @@
+cmake_minimum_required(VERSION 3.19)
+
+enable_language(C CXX ASM)
+
+# add module name here
+project(isp)
+
+#####################################
+
+# source code
+
+# mehtod 1 manual list 
+list(
+    APPEND ${PROJECT_NAME}_sources
+	
+	# ./driver/template_driver.c  
+)
+
+# method 2 glob all *.c
+file( GLOB hal_sources CONFIGURE_DEPENDS ./hal/*.c )
+# isp/drivers
+file(GLOB ISPDRIVERS_SRC CONFIGURE_DEPENDS 
+	./driver/drivers/clock/*.c
+	./driver/drivers/common/*.c
+	./driver/drivers/gpio/*.c
+	./driver/drivers/i2c/*.c
+	./driver/drivers/isp/isp_driver.c
+	./driver/drivers/isp/pipeline/mcu/rtscam_isp_iomem.c
+	./driver/drivers/isp/pipeline/mcu/rtscam_isp_mcu.c
+	./driver/drivers/isp/pipeline/mcu/rtscam_isp_statis.c
+	./driver/drivers/isp/pipeline/mcu/rtscam_isp_sync.c
+	#./driver/drivers/isp/driver_mcu.c
+	./driver/drivers/isp/rtscam_isp_pipeline.c
+	./driver/drivers/isp/pipeline/rtscam_isp_cru.c
+	./driver/drivers/isp/pipeline/rtscam_isp_i2c.c
+	./driver/drivers/isp/pipeline/rtscam_isp_power.c
+	./driver/drivers/memory/memory.c
+	./driver/drivers/pinctrl/*.c
+	./driver/drivers/reset/*.c
+)
+
+# isp/isplib
+file(GLOB ISPLIB_SRC CONFIGURE_DEPENDS 
+	./driver/isplib/common/core/*.c
+	./driver/isplib/common/oslayer/freertos/*.c
+	./driver/isplib/controller/api/*.c
+	./driver/isplib/server/api/*.c
+	./driver/isplib/server/common/*.c
+	./driver/isplib/server/core/*.c
+	./driver/isplib/server/hardware/*.c
+	./driver/isplib/server/modules/*.c
+	./driver/isplib/server/oslayer/freertos/*.c
+	./driver/isplib/server/proto/*.c
+	./driver/isplib/server/proto/nanopb/*.c
+	./driver/isplib/server/modules/isp_modules.c
+)
+list( FILTER ISPLIB_SRC EXCLUDE REGEX "_cpu")
+
+#set(isp_modules
+#	./driver/isplib/server/modules/isp_modules.c
+#)
+#
+#add_custom_command( OUTPUT ${isp_modules}
+#    COMMAND ${CMAKE_COMMAND} -Dprj_root=${prj_root} -P ./driver/isplib/server/modules/gen_modules_file.cmake
+#)
+list(
+    APPEND ${PROJECT_NAME}_sources
+	${hal_sources}
+	${ISPDRIVERS_SRC}
+	${ISPLIB_SRC}
+#	${isp_modules}
+)
+
+if ( CONFIG_VERIFICATION )
+file(GLOB isp_ver_multi_stream_src CONFIGURE_DEPENDS 
+    ./verification/multistream/*.c  
+)
+list(
+    APPEND ${PROJECT_NAME}_sources
+	./verification/isp_verify.c  
+	./verification/task_mcu.c  
+	./verification/reg_api.c  
+	./verification/reg_log.c  
+	./verification/config_regs.c  
+	./verification/config_regs_pipe.c  
+	./verification/config_regs_vhdr.c  
+	./verification/task_isp_io.c  
+	./verification/crc32.c  
+	./application/rts_camera/rts_camera_misc.c
+	./application/rts_camera/rts_camera.c             #main code (Done)
+	./application/rts_camera/rts_camera_ctrl.c        #main code (Done)
+	./application/rts_camera/rts_camera_fps.c         #main code (Done)
+	./application/rts_camera/rts_camera_md.c          #main code (Done) Some non-instance code.
+	./application/rts_camera/rts_camera_osdi.c        #
+	./application/rts_camera/rts_camera_soc.c         #main code (Done) Some non-instance code.
+	./application/rts_camera/rts_camera_soc_3915.c    #main code (Done)
+	./application/rts_camera/rts_camera_video.c       #main code (Done)
+	./application/rts_camera/rts_camera_zoom.c        #main code
+	./application/rts_camera/rts-dma-contig.c         #main code
+	${isp_ver_multi_stream_src}
+)
+
+
+list(
+    APPEND ${PROJECT_NAME}_sources_voe
+	./application/voe_related/lib_isp/rtstream/utils/librtscamkit/src/rts_mem.c
+	./application/voe_related/lib_isp/drv/reset/reset-rts3915.c
+	./application/voe_related/lib_isp/drv/reset/reset-rtsmem3915.c
+	./application/voe_related/lib_isp/drv/rlx/rlx_sh_irq.c
+#	./application/voe_related/lib_isp/drv/time/rt_time.c
+	./application/voe_related/lib_isp/drv/clk/clk-rts3915.c
+#	./application/voe_related/lib_isp/drv/i2c/rtl8735b_i2c_simple.c
+#	./application/voe_related/lib_isp/drv/gpio/rtl8735b_gpio_simple.c
+#	./application/voe_related/lib_isp/sys/rtx_mutex.c
+)
+endif()
+
+# include path
+list(
+	APPEND ${PROJECT_NAME}_include
+
+	./driver
+	./hal
+	# isp/drivers
+	./driver/drivers/clock
+	./driver/drivers/common
+	./driver/drivers/gpio
+	./driver/drivers/i2c
+	./driver/drivers/isp
+	./driver/drivers/memory
+	./driver/drivers/pinctrl
+	./driver/drivers/reset
+	./driver/drivers/include
+
+	# isp/kernel
+	./driver/kernel/portable   # cache.h
+
+	# isp/isplib
+	./driver/isplib/server/core
+	./driver/isplib/server/common
+	./driver/isplib/server/oslayer
+	./driver/isplib/server/modules
+	./driver/isplib/server/hardware
+	./driver/isplib/server/hardware/regs
+	./driver/isplib/server/hardware/regs/rts3921
+	./driver/isplib/server/proto
+	./driver/isplib/server/proto/nanopb
+	./driver/isplib/common/core
+	./driver/isplib/common/oslayer
+	./driver/isplib/common/common
+	./driver/isplib/common/api
+	./driver/isplib/server/hardware/regs
+	./driver/isplib/common/api
+	./verification  
+	./verification/isp_io_sample  
+	./application/rts_camera
+	./application/rts_camera/linux
+	./application/rts_camera/media
+
+	# sensor peripheral
+	${soc_root}/video/sensor/hal
+)
+
+# include path
+list(
+	APPEND ${PROJECT_NAME}_include_voe
+	./application/voe_related/cmsis/voe/include
+#	./application/voe_related/lib_isp
+	./application/voe_related/lib_isp/drv/
+	./application/voe_related/lib_isp/drv/clk
+#	./application/voe_related/lib_isp/drv/gpio
+#	./application/voe_related/lib_isp/drv/i2c
+	./application/voe_related/lib_isp/drv/isp/3915/kernel/include
+	./application/voe_related/lib_isp/drv/reset
+	./application/voe_related/lib_isp/drv/rlx
+	./application/voe_related/lib_isp/drv/rlx/reg
+	./application/voe_related/lib_isp/lib/common
+	./application/voe_related/lib_isp/lib/video/3915/include
+	./application/voe_related/lib_isp/rtstream/hardware/isp/include/common
+	./application/voe_related/lib_isp/rtstream/utils/librtscamkit/include
+	./application/voe_related/lib_isp/share/common
+	./application/voe_related/lib_isp/share/config
+	./application/voe_related/lib_isp/sys
+	./application/voe_related/os/freertos_v2020
+	./application/voe_related/inc/include
+	./application/voe_related/inc/linux
+	./application/voe_related/inc/linux2
+)
+
+# marco define
+list(
+	APPEND ${PROJECT_NAME}_define
+	
+	USER_DEFINE_WITH_VALUE=1
+	USER_DEFINE
+)
+
+# real sensor option
+list(
+	APPEND ${PROJECT_NAME}_define
+	REALSENSOR=1
+)
+
+if(DEFINED VHDR AND VHDR)
+list(
+	APPEND ${PROJECT_NAME}_define
+	VHDR
+)
+endif()
+
+#####################################
+####       KEEP BELOW PART       ####
+#####################################
+
+# include(${CMAKE_SOURCE_DIR}/cmake/libversion_file.cmake)
+
+add_library(
+    ${PROJECT_NAME} STATIC
+	
+    ${${PROJECT_NAME}_sources}
+    ${${PROJECT_NAME}_sources_voe}
+)
+
+list(
+	APPEND ${PROJECT_NAME}_flags
+	
+	${common_define}
+
+	${${PROJECT_NAME}_define}	
+)
+
+target_compile_definitions(${PROJECT_NAME} PRIVATE ${${PROJECT_NAME}_flags} )
+target_compile_options(${PROJECT_NAME} PRIVATE ${LIBS_WARN_ERR_FLAGS} ${common_compile_options})
+
+target_include_directories(
+	${PROJECT_NAME}
+	PRIVATE
+
+	${common_inc_path}
+	
+	${${PROJECT_NAME}_include}
+	${${PROJECT_NAME}_include_voe}
+	
+	${soc_root}/fwlib/include
+	${soc_root}/fwlib/include/cmsis
+	${soc_root}/fwlib/include/rom	
+	${soc_root}/hal/include
+	${soc_root}/hal/src
+)
+list(APPEND isp_algo_libs
+	${soc_root}/video/isp/driver/sysroot/lib/librts_algo_ae.a
+	${soc_root}/video/isp/driver/sysroot/lib/librts_algo_af.a
+	${soc_root}/video/isp/driver/sysroot/lib/librts_algo_awb.a
+	${soc_root}/video/isp/driver/sysroot/lib/librts_algo_other.a
+)
+target_link_libraries(${PROJECT_NAME} PRIVATE ${isp_algo_libs} m)
+
+# include(${CMAKE_SOURCE_DIR}/cmake/updatebsp.cmake)
+# include(${CMAKE_SOURCE_DIR}/cmake/libversion_exec.cmake)
+set_target_properties(${PROJECT_NAME} PROPERTIES ARCHIVE_OUTPUT_DIRECTORY ${vmodule_lib_path})

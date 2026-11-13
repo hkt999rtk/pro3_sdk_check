@@ -1,0 +1,10 @@
+#ifndef MMF2_MEDIATIME_8735C_H
+#define MMF2_MEDIATIME_8735C_H
+
+uint64_t mm_read_mediatime_us(void);
+uint32_t mm_read_mediatime_ms(void);
+
+void mm_set_mediatime_in_us(uint64_t mediatime_in_us);
+void mm_set_mediatime_in_ms(uint32_t mediatime_in_ms);
+
+#endif

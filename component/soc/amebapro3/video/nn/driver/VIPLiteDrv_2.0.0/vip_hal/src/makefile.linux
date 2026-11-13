@@ -1,0 +1,153 @@
+# License-Identifier: GPL-2.0
+#
+# Linux build file for user HAL layer.
+#
+
+################################################################################
+# Include common definitions.
+
+include $(VIPLITE_ROOT)/makefile.linux.def
+
+################################################################################
+# Define target module name.
+
+ifeq ($(STATIC_LINK_BUILD), 1)
+  STATIC            := 1
+  TARGET_MODULE     := $(OBJ_DIR)/libVIPhal.a
+else
+  DYNAMIC           := 1
+  TARGET_MODULE     := $(OBJ_DIR)/libVIPhal.so
+  TARGET_SONAME     := libVIPhal.so
+endif
+
+################################################################################
+# Installation directory
+
+INSTALL_DIR         := $(SDK_DIR)/drivers
+
+################################################################################
+# Supply additional include directories.
+
+INCLUDE := -I$(VIPLITE_ROOT)/common \
+           -I$(VIPLITE_ROOT)/vip_hal/inc \
+           -I$(VIPLITE_ROOT)/vip_hal/src \
+           -I$(VIPLITE_ROOT)/vip_hal/src/os/linux \
+           -I$(VIPLITE_ROOT)/include/nbg_linker \
+           -I$(VIPLITE_ROOT)/include/ \
+           -I$(VIPLITE_ROOT)/vip_drv/inc/ \
+           -I$(VIPLITE_ROOT)/vip_drv/src/os/linux/
+
+CFLAGS += $(INCLUDE)
+
+################################################################################
+# Add extra flags for object files.
+
+CFLAGS += -fPIC -Werror -Wshadow -Wsign-compare
+
+
+################################################################################
+# Define flags for the linker.
+
+LFLAGS += -Wl,--version-script=libVIPhal.map
+LFLAGS += -Wall -Wl,-z,defs -shared -Wl,-soname,$(TARGET_SONAME)
+
+# Reduce library size
+ifneq ($(DEBUG), 1)
+ifeq ($(DYNAMIC),1)
+	ifneq ($(ENABLE_ASAN), 1)
+		LFLAGS += -s
+	endif
+endif
+endif
+
+# Define flags for the asan.
+ifeq ($(ENABLE_ASAN), 1)
+	CFLAGS += -g
+	LFLAGS += -fsanitize=address -fno-omit-frame-pointer
+endif
+
+# Define flags for the gcov.
+ifeq ($(ENABLE_GCOV), 1)
+	CFLAGS += -fprofile-arcs -ftest-coverage
+endif
+
+################################################################################
+# Supply dependent libraries.
+
+# Specify Vivante library paths.
+LIBS += -L $(VIPLITE_ROOT)/vip_hal/src/$(OBJ_DIR)
+LIBS += -L $(VIPLITE_ROOT)/vip_hal/src/os/linux/$(OBJ_DIR)
+
+# Supply necessary libraries.
+# LIBS += -lm -lpthread -ldl -lrt
+LIBS += -lpthread
+
+# link asan for memory leak check
+ifeq ($(ENABLE_ASAN), 1)
+	LIBS += -lasan
+endif
+
+# link asan for memory leak check
+ifeq ($(ENABLE_GCOV), 1)
+	LIBS += -lgcov
+endif
+
+################################################################################
+# Describe object files.
+
+OBJECTS := $(OBJ_DIR)/vip_hal.o \
+           $(OBJ_DIR)/vip_hal_hardware.o \
+           $(OBJ_DIR)/vip_hal_heap.o     \
+           os/linux/$(OBJ_DIR)/vip_hal_os.o
+
+
+################################################################################
+# Define targets.
+
+.PHONY: all clean install extra_install
+
+all: $(TARGET_MODULE)
+
+clean:
+	@rm -rf $(OBJ_DIR)
+	@rm -rf os/linux/$(OBJ_DIR)
+	@rm -f $(INSTALL_DIR)/libVIPhal.*
+	@rm -rdf $(INSTALL_DIR)
+
+install: extra_install
+	@mkdir -p $(INSTALL_DIR)
+	@-cp $(TARGET_MODULE) $(INSTALL_DIR)
+
+extra_install: all
+	@mkdir -p $(SDK_DIR)/drivers
+
+################################################################################
+# Module rules.
+
+ifeq ($(STATIC),1)
+$(TARGET_MODULE): $(OBJECTS)
+	$(AR) -r -c $@ $(OBJECTS)
+	$(RANLIB) $@
+endif
+
+ifeq ($(DYNAMIC),1)
+
+
+$(TARGET_MODULE): $(OBJECTS)
+	$(CC) $(LFLAGS) -o $@ $(OBJECTS) $(LIBS)
+endif
+
+################################################################################
+# Object rules.
+
+$(OBJ_DIR)/%.o: %.c
+	@mkdir -p $(OBJ_DIR)
+	$(CC) -c $(CFLAGS) -MMD -ansi -o $@ $<
+
+os/linux/$(OBJ_DIR)/%.o: os/linux/%.c
+	@mkdir -p os/linux/$(OBJ_DIR)
+	$(CC) -c $(CFLAGS) -MMD -o $@ $<
+
+# object dependencies.
+-include $(OBJECTS:.o=.d)
+

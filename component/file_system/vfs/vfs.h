@@ -1,0 +1,270 @@
+#ifndef _VFS_H
+#define _VFS_H
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include "platform_autoconf.h"
+#include "basic_types.h"
+#include "log.h"
+#include <sys/unistd.h>
+#include <sys/stat.h>
+#include <stdio.h>
+
+/* newlib defines feof()/ferror() as MACROS in <stdio.h> that read FILE->_flags
+ * inline, so they never emit a call to the feof/ferror symbol and bypass the
+ * VFS redirection (cmake/flags/common/link_options.cmake -> __wrap_feof/
+ * __wrap_ferror in vfs_wrap.c). On a VFS FILE* (really a vfs_file*) the macro
+ * reads garbage. Since every fopen() is VFS-wrapped, all FILE* are vfs_file*,
+ * so we drop the macros here and let feof()/ferror() resolve to the wrapped
+ * functions. <stdio.h> is pulled in just above so its include guard makes any
+ * later #include <stdio.h> a no-op, keeping the undef effective regardless of
+ * header order. clearerr is intentionally NOT undef'd: it has no VFS wrapper. */
+#ifdef feof
+#undef feof
+#endif
+#ifdef ferror
+#undef ferror
+#endif
+
+#define VFS_PATH_MAX 256
+
+#define VFS_O_ACCMODE	0x00000003
+#define VFS_O_RDONLY	0x00000000
+#define VFS_O_WRONLY	0x00000001
+#define VFS_O_RDWR		0x00000002
+#define VFS_O_CREAT		0x00000100
+#define VFS_O_EXCL		0X00000200
+#define VFS_O_TRUNC		0x00001000
+#define VFS_O_APPEND	0x00002000
+#define VFS_O_CLOEXEC	0x02000000
+
+/*vfs_type*/
+#define VFS_FATFS		0x00
+#define VFS_LITTLEFS	0x01
+#define VFS_REALFS	0x02
+#define VFS_FS_MAX	0x03
+
+/* One physical volume; its file system is selected in Kconfig. */
+#define VFS_TARGET_FLASH_VFS1		0x00
+#define VFS_TARGET_FLASH_VFS2		0x01
+#define VFS_TARGET_FLASH_APP_FATFS	0x02
+#define VFS_TARGET_FLASH_APP_LFS		0x03
+#define VFS_TARGET_SECOND_FLASH		0x04
+#define VFS_TARGET_SD				0x05
+#define VFS_TARGET_SD_SPI			0x06
+#define VFS_TARGET_USBH				0x07
+#define VFS_TARGET_RAM				0x08
+#define VFS_TARGET_MAX				0x09
+
+/*vfs read-write permission when initializing*/
+#define VFS_RW 0x00
+#define VFS_RO 0x01
+
+#if defined(CONFIG_LITTLEFS_WITHIN_APP_IMG)
+#define VFS_USER_BASE 5
+#else
+#define VFS_USER_BASE 4
+#endif
+#if defined(CONFIG_VFS_RAM)
+#define VFS_USER_MAX (VFS_USER_BASE + 1)
+#else
+#define VFS_USER_MAX VFS_USER_BASE
+#endif
+
+/* related to op_prepend_header.py */
+#define PATTERN_VFS_1 0x5f736676
+#define PATTERN_VFS_2 0x5f746166
+
+#if defined(CONFIG_LITTLEFS_WITHIN_APP_IMG)
+/* read-only littlefs region (embedded in app image, scanned by IMAGE_HEADER).
+ * Custom signature, distinct from PATTERN_VFS_*. ASCII "ROLF"/"SLFS" — uppercase
+ * on purpose so it never collides with the lowercase "rolfs:" path strings that
+ * appear throughout the littlefs payload. */
+#define PATTERN_ROLFS_1 0x464c4f52
+#define PATTERN_ROLFS_2 0x53464c53
+#endif
+
+#define VFS_PREFIX "vfs"
+#define VFS2_PREFIX "vfs2"
+#define VFS_R3_PREFIX "fat1"
+#if defined(CONFIG_LITTLEFS_WITHIN_APP_IMG)
+#define VFS_ROLFS_PREFIX "rolfs"
+#endif
+
+#define DT_DIR 0x04
+#define DT_REG 0x08
+
+enum {
+	VFS_ERROR = 0,
+	VFS_WARNING,
+	VFS_INFO,
+	VFS_DEBUG,
+	VFS_NONE,
+};
+
+#define VFS_DBG_LEVEL VFS_ERROR
+
+#define VFS_DBG_ON	0
+#if VFS_DBG_ON
+#define VFS_DBG(level, fmt, arg...)     \
+do {\
+	if (level <= VFS_DBG_LEVEL) {\
+		if (level <= VFS_ERROR) {\
+			RTK_LOGS(NOTAG, RTK_LOG_ERROR, "\n\r[error] %s, " fmt "\n\r", __func__, ##arg);\
+		} \
+		else if(level == VFS_WARNING){\
+			RTK_LOGS(NOTAG, RTK_LOG_WARN, "[warning] %s, " fmt "\n", __func__, ##arg);\
+		} \
+		else if(level == VFS_INFO){\
+			RTK_LOGS(NOTAG, RTK_LOG_INFO, "[info] %s, " fmt "\n", __func__, ##arg);\
+		} \
+		else if(level == VFS_DEBUG){\
+			RTK_LOGS(NOTAG, RTK_LOG_INFO, "[debug] %s, " fmt "\n", __func__, ##arg);\
+		} \
+	}\
+}while(0)
+#else
+#define VFS_DBG(level, fmt, arg...)
+#endif
+
+#define SHOULD_USE_NAND() (!SYSCFG_OTP_BootFromNor())
+
+struct dirent {
+	/* Always zero */
+	long d_ino;
+
+	/* File position within stream */
+	long d_off;
+
+	/* Structure size */
+	unsigned int d_reclen;
+
+	/* Length of name without \0 */
+	size_t d_namlen;
+
+	/* File type */
+	int d_type;
+
+	/* File name */
+	char d_name[VFS_PATH_MAX + 1];
+};
+typedef struct dirent dirent;
+
+typedef struct _vfs_file {
+	int vfs_id;
+	unsigned char user_id;
+	void *file;
+	char name[VFS_PATH_MAX + 1];
+	struct dirent ent;
+} vfs_file;
+
+typedef struct {
+	int (*open)(void *fs, const char *filename, const char *mode, vfs_file *finfo);
+	int (*read)(void *fs, unsigned char *buf, unsigned int size, unsigned int count, vfs_file *file);
+	int (*write)(void *fs, unsigned char *buf, unsigned int size, unsigned int count, vfs_file *file);
+	int (*close)(void *fs, vfs_file *file);
+	int (*seek)(void *fs, long int offset, int origin, vfs_file *file);
+	void (*rewind)(void *fs, vfs_file *file);
+	int (*fgetpos)(void *fs, vfs_file *file);
+	int (*fsetpos)(void *fs, unsigned int offset, vfs_file *file);
+	int (*fflush)(void *fs, vfs_file *file);
+	int (*remove)(void *fs, const char *filename);
+	int (*rename)(void *fs, const char *old_name, const char *new_name);
+	int (*eof)(void *fs, vfs_file *file);
+	int (*error)(vfs_file *file); //ferror
+	int (*tell)(void *fs, vfs_file *file);
+	int (*ftruncate)(void *fs, vfs_file *file, off_t length);
+	int (*opendir)(void *fs, const char *name, vfs_file *file);
+	struct dirent *(*readdir)(void *fs, vfs_file *file);
+	int (*closedir)(void *fs, vfs_file *file);
+	int (*rmdir)(void *fs, const char *path);
+	int (*mkdir)(void *fs, const char *pathname);
+	int (*access)(void *fs, const char *pathname, int mode);
+	int (*stat)(void *fs, char *path, struct stat *buf);
+	int (*mount)(int target);
+	int (*unmount)(int target);
+	int (*get_interface)(int target);
+	const char	*TAG;
+	unsigned char drv_num;
+	int vfs_type;
+} vfs_opt;
+
+typedef int (*vfs_enc_callback_t)(unsigned char *input, unsigned char *output, unsigned int len, unsigned long offset);
+typedef int (*vfs_dec_callback_t)(unsigned char *input, unsigned char *output, unsigned int len, unsigned long offset);
+
+typedef struct {
+	int vfs_type;
+	int vfs_type_id;		//used to match vfs.drv index
+	char vfs_ro_flag;		//0:rw; 1: read only
+	char vfs_target;
+	const char *tag;
+	vfs_enc_callback_t vfs_enc_callback;
+	vfs_dec_callback_t vfs_dec_callback;
+	unsigned char enc_iv_len;
+	void *fs;
+} user_config;
+
+typedef struct {
+	unsigned int drv_num;
+	unsigned int user_num;
+	const vfs_opt *drv[VFS_FS_MAX];
+	user_config user[VFS_USER_MAX];
+} vfs_drv;
+
+extern vfs_drv vfs;
+extern const vfs_opt fatfs_drv;
+extern const vfs_opt littlefs_drv;
+extern const vfs_opt realfs_drv;
+extern volatile uint8_t realfs_mount_flag;
+extern volatile uint8_t lfs_mount_flag;
+extern volatile uint8_t lfs2_mount_flag;
+#if defined(CONFIG_LITTLEFS_WITHIN_APP_IMG)
+extern volatile uint8_t lfs_rolfs_mount_flag;
+#endif
+extern volatile uint8_t fatfs_mount_flag;
+extern volatile uint8_t fatfs2_mount_flag;
+#if defined(CONFIG_VFS_RAM)
+extern volatile uint8_t ram_mount_flag;
+/* RAM target's selected file system. */
+#if defined(CONFIG_VFS_RAM_LITTLEFS)
+#define VFS_RAM_LITTLEFS	1
+#endif
+#if defined(CONFIG_VFS_RAM_FATFS) && !defined(CONFIG_FATFS_READ_ONLY)
+#define VFS_RAM_FATFS		1
+#endif
+#if defined(CONFIG_VFS_RAM_REALFS)
+#define VFS_RAM_REALFS		1
+#endif
+#endif
+
+extern u32 vfs_nand_flash_pagesize;
+extern u32 vfs_nand_flash_pagenum;
+
+void vfs_init(void);
+void vfs_deinit(void);
+/* Task context only. FS type is taken from Kconfig; prefix must outlive the registration. */
+int vfs_target_register(const char *prefix, int target, char flag);
+int vfs_target_unregister(const char *prefix);
+char *vfs_get_prefix(int target);
+int vfs_auto_register(void);
+int vfs_scan_vfs(int vfs_type);
+int vfs_register(const vfs_opt *drv);
+int find_vfs_number(const char *name, int *prefix_len, int *user_id);
+int vfs_user_mount(const char *prefix);
+void vfs_build_filename(int vfs_id, int user_id, const char *filename, int prefix_len, char *out_name, size_t out_size);
+
+void *opendir(const char *name);
+struct dirent *readdir(void *dirp);
+int closedir(void *dirp);
+int scandir(const char *dirp, struct dirent ***namelist,
+			int (*filter)(const struct dirent *),
+			int (*compar)(const struct dirent **, const struct dirent **));
+int rmdir(const char *path);
+int mkdir(const char *pathname, mode_t mode);
+int access(const char *pathname, int mode);
+
+#ifdef __cplusplus
+}
+#endif
+#endif

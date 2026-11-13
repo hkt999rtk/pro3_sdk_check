@@ -1,0 +1,6 @@
+ameba_add_subdirectory_ifnot(CONFIG_PXP video_ipc)
+ameba_add_subdirectory_if(CONFIG_ARM_CORE_CA32 video_api_ap)
+ameba_add_subdirectory_if(CONFIG_ARM_CORE_CA32 video_osd)
+ameba_add_subdirectory_if(CONFIG_ARM_CORE_CA32 video_nn_utils)
+ameba_add_subdirectory_if(CONFIG_ARM_CORE_CM4_VP video_app_vp)
+ameba_add_subdirectory_if(CONFIG_PXP video_app_vp)

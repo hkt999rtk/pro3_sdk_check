@@ -1,0 +1,162 @@
+
+//tool_version:1.4.35
+
+#ifndef _MASK_H_INC_
+#define _MASK_H_INC_
+
+#include <isp_reg.h>
+#include <isp_reg_base.h>
+
+#define MASK_GLOBLE_EN (MASK_BASE_ADDR + 0x00000000) //0x00006000
+#define MASK_PATTERN (MASK_BASE_ADDR + 0x00000004) //0x00006004
+#define MASK_RECTANGLE1_START (MASK_BASE_ADDR + 0x00000010) //0x00006010
+#define MASK_RECTANGLE1_END (MASK_BASE_ADDR + 0x00000014) //0x00006014
+#define MASK_RECTANGLE2_START (MASK_BASE_ADDR + 0x00000018) //0x00006018
+#define MASK_RECTANGLE2_END (MASK_BASE_ADDR + 0x0000001c) //0x0000601c
+#define MASK_RECTANGLE3_START (MASK_BASE_ADDR + 0x00000020) //0x00006020
+#define MASK_RECTANGLE3_END (MASK_BASE_ADDR + 0x00000024) //0x00006024
+#define MASK_RECTANGLE4_START (MASK_BASE_ADDR + 0x00000028) //0x00006028
+#define MASK_RECTANGLE4_END (MASK_BASE_ADDR + 0x0000002c) //0x0000602c
+#define MASK_GRID_START (MASK_BASE_ADDR + 0x00000040) //0x00006040
+#define MASK_GRID_WINUM (MASK_BASE_ADDR + 0x00000044) //0x00006044
+#define MASK_GRID_WIN_SIZE (MASK_BASE_ADDR + 0x00000048) //0x00006048
+#define MASK_MEM_REG_BASE (MASK_BASE_ADDR + 0x00000050) //0x00006050
+#define MASK_MEM_REG_TOP (MASK_BASE_ADDR + 0x000000cc) //0x000060cc
+
+/* Bits of MASK_GLOBLE_EN (0x00000000) */
+
+#define MASK_GLOBLE_EN_OFFSET 0
+#define MASK_GLOBLE_EN_BITS 5
+#define MASK_GLOBLE_EN_MASK (((1 << 5) - 1) << 0)
+
+/* Bits of MASK_PATTERN (0x00000004) */
+
+#define MASK_Y_OFFSET 0
+#define MASK_Y_BITS 8
+#define MASK_Y_MASK (((1 << 8) - 1) << 0)
+
+#define MASK_U_OFFSET 8
+#define MASK_U_BITS 8
+#define MASK_U_MASK (((1 << 8) - 1) << 8)
+
+#define MASK_V_OFFSET 16
+#define MASK_V_BITS 8
+#define MASK_V_MASK (((1 << 8) - 1) << 16)
+
+/* Bits of MASK_RECTANGLE1_START (0x00000010) */
+
+#define MASK1_START_X_OFFSET 0
+#define MASK1_START_X_BITS 16
+#define MASK1_START_X_MASK (((1 << 16) - 1) << 0)
+
+#define MASK1_START_Y_OFFSET 16
+#define MASK1_START_Y_BITS 16
+#define MASK1_START_Y_MASK (((1 << 16) - 1) << 16)
+
+/* Bits of MASK_RECTANGLE1_END (0x00000014) */
+
+#define MASK1_END_X_OFFSET 0
+#define MASK1_END_X_BITS 16
+#define MASK1_END_X_MASK (((1 << 16) - 1) << 0)
+
+#define MASK1_END_Y_OFFSET 16
+#define MASK1_END_Y_BITS 16
+#define MASK1_END_Y_MASK (((1 << 16) - 1) << 16)
+
+/* Bits of MASK_RECTANGLE2_START (0x00000018) */
+
+#define MASK2_START_X_OFFSET 0
+#define MASK2_START_X_BITS 16
+#define MASK2_START_X_MASK (((1 << 16) - 1) << 0)
+
+#define MASK2_START_Y_OFFSET 16
+#define MASK2_START_Y_BITS 16
+#define MASK2_START_Y_MASK (((1 << 16) - 1) << 16)
+
+/* Bits of MASK_RECTANGLE2_END (0x0000001c) */
+
+#define MASK2_END_X_OFFSET 0
+#define MASK2_END_X_BITS 16
+#define MASK2_END_X_MASK (((1 << 16) - 1) << 0)
+
+#define MASK2_END_Y_OFFSET 16
+#define MASK2_END_Y_BITS 16
+#define MASK2_END_Y_MASK (((1 << 16) - 1) << 16)
+
+/* Bits of MASK_RECTANGLE3_START (0x00000020) */
+
+#define MASK3_START_X_OFFSET 0
+#define MASK3_START_X_BITS 16
+#define MASK3_START_X_MASK (((1 << 16) - 1) << 0)
+
+#define MASK3_START_Y_OFFSET 16
+#define MASK3_START_Y_BITS 16
+#define MASK3_START_Y_MASK (((1 << 16) - 1) << 16)
+
+/* Bits of MASK_RECTANGLE3_END (0x00000024) */
+
+#define MASK3_END_X_OFFSET 0
+#define MASK3_END_X_BITS 16
+#define MASK3_END_X_MASK (((1 << 16) - 1) << 0)
+
+#define MASK3_END_Y_OFFSET 16
+#define MASK3_END_Y_BITS 16
+#define MASK3_END_Y_MASK (((1 << 16) - 1) << 16)
+
+/* Bits of MASK_RECTANGLE4_START (0x00000028) */
+
+#define MASK4_START_X_OFFSET 0
+#define MASK4_START_X_BITS 16
+#define MASK4_START_X_MASK (((1 << 16) - 1) << 0)
+
+#define MASK4_START_Y_OFFSET 16
+#define MASK4_START_Y_BITS 16
+#define MASK4_START_Y_MASK (((1 << 16) - 1) << 16)
+
+/* Bits of MASK_RECTANGLE4_END (0x0000002c) */
+
+#define MASK4_END_X_OFFSET 0
+#define MASK4_END_X_BITS 16
+#define MASK4_END_X_MASK (((1 << 16) - 1) << 0)
+
+#define MASK4_END_Y_OFFSET 16
+#define MASK4_END_Y_BITS 16
+#define MASK4_END_Y_MASK (((1 << 16) - 1) << 16)
+
+/* Bits of MASK_GRID_START (0x00000040) */
+
+#define MASK_START_X_OFFSET 0
+#define MASK_START_X_BITS 16
+#define MASK_START_X_MASK (((1 << 16) - 1) << 0)
+
+#define MASK_START_Y_OFFSET 16
+#define MASK_START_Y_BITS 16
+#define MASK_START_Y_MASK (((1 << 16) - 1) << 16)
+
+/* Bits of MASK_GRID_WINUM (0x00000044) */
+
+#define MASK_WINUM_X_OFFSET 0
+#define MASK_WINUM_X_BITS 6
+#define MASK_WINUM_X_MASK (((1 << 6) - 1) << 0)
+
+#define MASK_WINUM_Y_OFFSET 8
+#define MASK_WINUM_Y_BITS 5
+#define MASK_WINUM_Y_MASK (((1 << 5) - 1) << 8)
+
+/* Bits of MASK_GRID_WIN_SIZE (0x00000048) */
+
+#define MASK_WIN_WIDTH_OFFSET 0
+#define MASK_WIN_WIDTH_BITS 10
+#define MASK_WIN_WIDTH_MASK (((1 << 10) - 1) << 0)
+
+#define MASK_WIN_HEIGHT_OFFSET 16
+#define MASK_WIN_HEIGHT_BITS 10
+#define MASK_WIN_HEIGHT_MASK (((1 << 10) - 1) << 16)
+
+/* Bits of MASK_MEM_REG (0x00000050~0x000000cc) */
+
+#define MASK_OFFSET 0
+#define MASK_BITS 32
+#define MASK_MASK (((1 << 32) - 1) << 0)
+
+#endif /* _MASK_H_INC_ */

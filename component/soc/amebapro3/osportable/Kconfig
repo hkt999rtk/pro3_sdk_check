@@ -1,0 +1,12 @@
+menu "CONFIG TICKLESS Develop"
+    config NOTICKLESS_FOR_NP
+		bool "Disable Tickless for NP"
+		default n
+	config NOTICKLESS_FOR_FP
+		bool "Disable Tickless for FP"
+		default n
+	config STANDARD_TICKLESS_FOR_NP
+		bool "Enable Tickless for Wowlan"
+		default n
+endmenu
+

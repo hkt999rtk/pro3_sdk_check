@@ -1,0 +1,180 @@
+menu "CONFIG User Config"
+
+menu "Flash Layout Configuration"
+
+comment "NOR flash layout. Offsets/sizes must be 4KB aligned; regions must not overlap (except AP IMG, which overlaps the APP OTA tail)."
+
+# Boot Manifest(4K) + AP Bootloader(248K)
+comment "BOOT Offset: 0x8000000 (fixed)"
+
+config FLASH_BOOT_OFFSET
+    hex
+    default 0x8000000
+
+config FLASH_BOOT_SIZE
+    hex "BOOT Size"
+    default 0x3F000
+
+# Vendor reserved, placed right after BOOT (set Size=0 and Offset=0xFFFFFFFF to disable)
+config FLASH_VND_RESV_OFFSET
+    hex "VND_RESV Offset"
+    default 0x803F000
+
+config FLASH_VND_RESV_SIZE
+    hex "VND_RESV Size"
+    default 0x1000
+
+# Certificate(4K) + Manifest(4K) + AP Application OTA1 + Manifest(4K) + RDP IMG OTA1
+config FLASH_OTA1_OFFSET
+    hex "APP OTA1 Offset"
+    default 0x8040000
+
+config FLASH_OTA1_SIZE
+    hex "APP OTA1 Size"
+    default 0x400000
+
+# Boot Manifest(4K) + AP Bootloader(256K) OTA
+config FLASH_BOOT_OTA2_OFFSET
+    hex "BOOT OTA2 Offset"
+    default 0x8440000
+
+config FLASH_BOOT_OTA2_SIZE
+    hex "BOOT OTA2 Size"
+    default 0x40000
+
+# Certificate(4K) + Manifest(4K) + AP Application OTA2 + Manifest(4K) + RDP IMG OTA2
+config FLASH_OTA2_OFFSET
+    hex "APP OTA2 Offset"
+    default 0x8480000
+
+config FLASH_OTA2_SIZE
+    hex "APP OTA2 Size"
+    default 0x400000
+
+# Manifest(4K) + AP IMG, placed at the tail of APP OTA1/OTA2 (optional, overlaps APP OTA)
+# Must be > 0 and < min(OTA1 size, OTA2 size); adjust together with the OTA sizes (checked at build time in ameba_flashcfg.c)
+config FLASH_APIMG_SIZE
+    hex "AP IMG OTA1/OTA2 Size (at the tail of APP OTA)"
+    default 0x100000
+
+# VFS region 1: wifi/BT/NN data
+config FLASH_VFS1_OFFSET
+    hex "VFS1 Offset"
+    default 0x88A3000
+
+config FLASH_VFS1_SIZE
+    hex "VFS1 Size"
+    default 0x600000
+
+# VFS region 2
+config FLASH_VFS2_OFFSET
+    hex "VFS2 Offset"
+    default 0xFFFFFFFF
+
+config FLASH_VFS2_SIZE
+    hex "VFS2 Size"
+    default 0
+
+# reserve for user
+config FLASH_USER_OFFSET
+    hex "USER Offset"
+    default 0xFFFFFFFF
+
+config FLASH_USER_SIZE
+    hex "USER Size"
+    default 0
+
+comment "NAND flash layout (used when booting from NAND)"
+
+# Boot Manifest(4K) + KM4 Bootloader(124K), 3 x 128K NAND blocks
+comment "NAND BOOT Offset: 0x8000000 (fixed)"
+
+config FLASH_NAND_BOOT_OFFSET
+    hex
+    default 0x8000000
+
+config FLASH_NAND_BOOT_SIZE
+    hex "NAND BOOT Size"
+    default 0x60000
+
+# Vendor reserved, 2 x 128K NAND blocks right after BOOT (set Size=0 and Offset=0xFFFFFFFF to disable)
+config FLASH_NAND_VND_RESV_OFFSET
+    hex "NAND VND_RESV Offset"
+    default 0x8060000
+
+config FLASH_NAND_VND_RESV_SIZE
+    hex "NAND VND_RESV Size"
+    default 0x40000
+
+# Certificate(4K) + Manifest(4K) + KM0 & KM4 & CA32 Application OTA1 + RDP IMG OTA1
+config FLASH_NAND_OTA1_OFFSET
+    hex "NAND APP OTA1 Offset"
+    default 0x80A0000
+
+config FLASH_NAND_OTA1_SIZE
+    hex "NAND APP OTA1 Size"
+    default 0x800000
+
+# Boot Manifest(4K) + KM4 Bootloader(124K) OTA, 3 x 128K NAND blocks (must be >= NAND BOOT Size)
+config FLASH_NAND_BOOT_OTA2_OFFSET
+    hex "NAND BOOT OTA2 Offset"
+    default 0x88A0000
+
+config FLASH_NAND_BOOT_OTA2_SIZE
+    hex "NAND BOOT OTA2 Size"
+    default 0x60000
+
+# Certificate(4K) + Manifest(4K) + KM0 & KM4 & CA32 Application OTA2 + RDP IMG OTA2
+config FLASH_NAND_OTA2_OFFSET
+    hex "NAND APP OTA2 Offset"
+    default 0x8900000
+
+config FLASH_NAND_OTA2_SIZE
+    hex "NAND APP OTA2 Size"
+    default 0x800000
+
+# Manifest(4K) + AP IMG, placed at the tail of APP OTA1/OTA2 (optional, overlaps APP OTA)
+# Must be > 0 and < min(NAND OTA1 size, NAND OTA2 size); adjust together with the OTA sizes (checked at build time in ameba_flashcfg.c)
+config FLASH_NAND_APIMG_SIZE
+    hex "NAND AP IMG OTA1/OTA2 Size (at the tail of APP OTA)"
+    default 0x100000
+
+# FTL for BT (default 12K = 3 x 4KB sectors; BT derives its FTL sector count from this size)
+config FLASH_NAND_FTL_OFFSET
+    hex "NAND FTL Offset"
+    default 0x9100000
+
+config FLASH_NAND_FTL_SIZE
+    hex "NAND FTL Size"
+    default 0x3000
+
+# VFS region 1
+config FLASH_NAND_VFS1_OFFSET
+    hex "NAND VFS1 Offset"
+    default 0x9103000
+
+config FLASH_NAND_VFS1_SIZE
+    hex "NAND VFS1 Size"
+    default 0x20000
+
+# VFS region 2: user file system, NN MDL also included
+config FLASH_NAND_VFS2_OFFSET
+    hex "NAND VFS2 Offset"
+    default 0x9123000
+
+config FLASH_NAND_VFS2_SIZE
+    hex "NAND VFS2 Size"
+    default 0x1000000
+
+# reserve for user
+config FLASH_NAND_USER_OFFSET
+    hex "NAND USER Offset"
+    default 0xFFFFFFFF
+
+config FLASH_NAND_USER_SIZE
+    hex "NAND USER Size"
+    default 0
+
+endmenu
+
+endmenu

@@ -1,0 +1,12 @@
+menu "SWLIB Option"
+    choice
+        prompt "UNISTD MODE"
+        default UNISTD_NATIVE
+			config UNISTD_NATIVE
+				bool "NATIVE"
+			config UNISTD_NOSYS
+				bool "NOSYS"
+			config UNISTD_SEMIHOSTING
+				bool "SEMIHOSTING"
+    endchoice
+endmenu

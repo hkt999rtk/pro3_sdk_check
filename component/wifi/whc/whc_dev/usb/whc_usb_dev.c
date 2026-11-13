@@ -1,0 +1,624 @@
+#include "usbd.h"
+#include "usbd_whc.h"
+#include "whc_dev.h"
+#if (defined(CONFIG_BT) && CONFIG_BT) && (defined(CONFIG_BT_INIC_USB) && CONFIG_BT_INIC_USB)
+#include "bt_inic.h"
+#endif
+
+struct whc_usb_priv_t whc_usb_priv = {0};
+
+u8 wifi_whc_usb_status = WIFI_WHC_USB_STATUS_ACTIVE;
+
+static const usbd_config_t whc_usb_wifi_cfg = {
+	.isr_priority = 4,
+#if defined (CONFIG_AMEBAGREEN2)
+	.rx_fifo_depth = 292U,
+	.ptx_fifo_depth = {16U, 256U, 32U, 256U, 128U, },
+#endif
+};
+
+/* host->device */
+static int whc_usb_dev_rx_done_cb(usbd_whc_ep_t *out_ep, u32 len)
+{
+	usb_ep_info_t *info = &out_ep->ep.info;
+	if (info->addr == WIFI_WHC_USB_BULKOUT_1 || info->addr == WIFI_WHC_USB_BULKOUT_2
+		|| info->addr == WIFI_WHC_USB_BULKOUT_3) {
+		if ((whc_usb_priv.irq_info.rxdone_epnum[whc_usb_priv.irq_info.intr_widx] == 0) &&
+			(whc_usb_priv.irq_info.len[whc_usb_priv.irq_info.intr_widx] == 0)) {
+			whc_usb_priv.irq_info.rxdone_epnum[whc_usb_priv.irq_info.intr_widx] = info->addr;
+			whc_usb_priv.irq_info.len[whc_usb_priv.irq_info.intr_widx] = len;
+			whc_usb_priv.irq_info.intr_widx = (whc_usb_priv.irq_info.intr_widx + 1) % WIFI_WHC_USB_BULKOUT_EP_NUM;
+			rtos_sema_give(whc_usb_priv.usb_irq_sema);
+		} else {
+			usbd_whc_receive_data(info->addr, out_ep->ep.xfer_buf, USB_BUFSZ, NULL);
+			RTK_LOGS(NOTAG, RTK_LOG_WARN, "rx cb list full, drop this message!\n");
+		}
+	}
+#if defined(CONFIG_BT) && defined(CONFIG_BT_INIC_USB)
+	else if (info->addr == USBD_WHC_BT_EP_BULK_OUT) {
+		return bt_inic_usb_hci_acl_hdl(out_ep->ep.xfer_buf, len);
+	}
+#endif
+	return RTK_SUCCESS;
+}
+
+#ifdef WHCH_TXAGG
+static int whch_usb_dev_txagg_pool_init(void)
+{
+	struct whch_usb_txbuf *txbuf = &whc_usb_priv.usb_rxbuf;
+	struct whch_buff *buff;
+	int i;
+	int ret = 0;
+
+	INIT_LIST_HEAD(&txbuf->usb_rxbuf_list);
+	txbuf->usb_rxbuff_num = 0;
+
+	txbuf->usb_rxbuff_pool = (struct whch_buff *)rtos_mem_zmalloc(WHCH_USB_RXBUF_NUM * sizeof(struct whch_buff));
+	if (!txbuf->usb_rxbuff_pool) {
+		ret = -1;
+		goto err;
+	}
+
+	for (i = 0; i < WHCH_USB_RXBUF_NUM; i++) {
+		buff = &txbuf->usb_rxbuff_pool[i];
+		buff->buf = (unsigned char *)rtos_mem_zmalloc(USB_BUFSZ);
+		if (!buff->buf) {
+			ret = -1;
+			goto err;
+		}
+		INIT_LIST_HEAD(&buff->list);
+		list_add_tail(&buff->list, &txbuf->usb_rxbuf_list);
+		txbuf->usb_rxbuff_num++;
+	}
+	goto exit;
+
+err:
+	if (txbuf->usb_rxbuff_pool) {
+		for (i = 0; i < WHCH_USB_RXBUF_NUM; i++) {
+			buff = &txbuf->usb_rxbuff_pool[i];
+			if (buff && buff->buf) {
+				rtos_mem_free((u8 *)buff->buf);
+			} else {
+				break;
+			}
+		}
+		rtos_mem_free((u8 *)txbuf->usb_rxbuff_pool);
+	}
+
+exit:
+	return ret;
+}
+
+static struct whch_buff *whch_usb_dev_txagg_buf_alloc(void)
+{
+	struct whch_usb_txbuf *txbuf = &whc_usb_priv.usb_rxbuf;
+	struct whch_buff *buff = NULL;
+
+	rtos_critical_enter(RTOS_CRITICAL_WIFI);
+	if (!list_empty(&txbuf->usb_rxbuf_list)) {
+		buff = list_first_entry(&txbuf->usb_rxbuf_list, struct whch_buff, list);
+		list_del_init(&buff->list);
+		txbuf->usb_rxbuff_num--;
+	}
+	rtos_critical_exit(RTOS_CRITICAL_WIFI);
+
+	return buff;
+}
+
+static int whch_usb_dev_txagg_config_rxbuf(u8 ep_idx)
+{
+	struct whch_buff *buff = whch_usb_dev_txagg_buf_alloc();
+
+	if (!buff) {
+		return -1;
+	}
+
+	whc_usb_priv.cur_rxbuff[ep_idx] = buff;
+	buff->status = 0;
+	buff->agg_num = 0;
+	usbd_whc_receive_data(EPIDX_TO_NUM(ep_idx), buff->buf, USB_BUFSZ, NULL);
+
+	return 0;
+}
+
+int whch_usb_dev_txagg_buf_num(void)
+{
+	struct whch_usb_txbuf *txbuf = &whc_usb_priv.usb_rxbuf;
+
+	return txbuf->usb_rxbuff_num;
+}
+
+void whch_usb_dev_txagg_buf_busy(struct whch_buff *buff, u8 delivered, u8 agg_num)
+{
+	struct whch_usb_txbuf *txbuf = &whc_usb_priv.usb_rxbuf;
+	u32 undelivered;
+
+	rtos_critical_enter(RTOS_CRITICAL_WIFI);
+	undelivered = (agg_num >= 32) ? 0xFFFFFFFFU : ((1U << agg_num) - 1U);
+	undelivered &= (delivered < 32) ? ~((1U << delivered) - 1U) : 0U;
+	buff->status &= ~undelivered;
+
+	if (buff->status == 0) {
+		list_add_tail(&buff->list, &txbuf->usb_rxbuf_list);
+		txbuf->usb_rxbuff_num++;
+	}
+
+	rtos_critical_exit(RTOS_CRITICAL_WIFI);
+}
+
+void whch_usb_dev_txagg_buff_free(u32 idx, u8 pktidx)
+{
+	struct whch_buff *buff;
+
+	if (idx >= (u32)WHCH_USB_RXBUF_NUM) {
+		return;
+	}
+	buff = &whc_usb_priv.usb_rxbuf.usb_rxbuff_pool[idx];
+
+	buff->status &= ~(1U << pktidx);
+	if (buff->status == 0) {
+		list_add_tail(&buff->list, &whc_usb_priv.usb_rxbuf.usb_rxbuf_list);
+		whc_usb_priv.usb_rxbuf.usb_rxbuff_num++;
+		whc_usb_dev_trigger_rx_handle();
+	}
+}
+
+static void whch_usb_dev_txagg_rx_handle(void)
+{
+	struct whc_msg_info *msg_info;
+	u32 event;
+	u16 len;
+	u8 ep_num;
+
+	while ((whc_usb_priv.irq_info.rxdone_epnum[whc_usb_priv.irq_info.task_ridx] != 0) &&
+		   (whc_usb_priv.irq_info.len[whc_usb_priv.irq_info.task_ridx] != 0)) {
+		struct whch_buff *buff;
+		struct whch_buff *new_buff;
+		u32 buffidx;
+		u8 ep_idx;
+
+		ep_num = whc_usb_priv.irq_info.rxdone_epnum[whc_usb_priv.irq_info.task_ridx];
+		len = whc_usb_priv.irq_info.len[whc_usb_priv.irq_info.task_ridx];
+		ep_idx = EPNUM_TO_IDX(ep_num);
+		buff = whc_usb_priv.cur_rxbuff[ep_idx];
+
+		if (!buff) {
+			/* no buffer was armed on this EP: drop the spurious completion and move on */
+			whc_usb_priv.irq_info.rxdone_epnum[whc_usb_priv.irq_info.task_ridx] = 0;
+			whc_usb_priv.irq_info.len[whc_usb_priv.irq_info.task_ridx] = 0;
+			whc_usb_priv.irq_info.task_ridx = (whc_usb_priv.irq_info.task_ridx + 1) % (WIFI_WHC_USB_BULKOUT_EP_NUM);
+			continue;
+		}
+
+		event = *(u32 *)buff->buf;
+		if (event != WHC_WIFI_EVT_XIMT_PKTS) {
+			/* non-TX event: copy it out and reuse this buffer to re-arm the EP (like non-AGG) */
+			whc_dev_dispatch_event_copy(buff->buf, len);
+			new_buff = buff;
+		} else {
+			new_buff = whch_usb_dev_txagg_buf_alloc();
+			if (!new_buff) {
+				RTK_LOGD(NOTAG, "%s %d alloc new buff fail!\n", __func__, __LINE__);
+				whc_usb_priv.irq_info.wait_xmit_skb = 1;
+				break;
+			}
+
+			msg_info = (struct whc_msg_info *)buff->buf;
+
+			buffidx = (u32)(buff - whc_usb_priv.usb_rxbuf.usb_rxbuff_pool);
+			whch_dev_txagg_dispatch(buff, buffidx, buff->buf, len, msg_info->agg_num);
+		}
+
+		/* consume the completed transfer */
+		whc_usb_priv.irq_info.rxdone_epnum[whc_usb_priv.irq_info.task_ridx] = 0;
+		whc_usb_priv.irq_info.len[whc_usb_priv.irq_info.task_ridx] = 0;
+		whc_usb_priv.irq_info.task_ridx = (whc_usb_priv.irq_info.task_ridx + 1) % (WIFI_WHC_USB_BULKOUT_EP_NUM);
+
+		/* re-arm this endpoint with the reserved buffer */
+		whc_usb_priv.cur_rxbuff[ep_idx] = new_buff;
+		new_buff->status = 0;
+		new_buff->agg_num = 0;
+		usbd_whc_receive_data(EPIDX_TO_NUM(ep_idx), new_buff->buf, USB_BUFSZ, NULL);
+	}
+
+	for (u8 i = 0; i < WIFI_WHC_USB_BULKOUT_EP_NUM; i++) {
+		if (!whc_usb_priv.cur_rxbuff[i]) {
+			whch_usb_dev_txagg_config_rxbuf(i);
+		}
+	}
+}
+#endif /* WHCH_TXAGG */
+
+static void whc_usb_dev_irq_task(void)
+{
+	struct whc_txbuf_info_t *whc_txbuf;
+#ifndef WHCH_TXAGG
+	struct sk_buff *new_skb = NULL;
+	struct sk_buff *skb_rcv = NULL;
+	struct whc_msg_info *msg_info;
+	u32 event = 0;
+	u16 len = 0;
+	u8 ep_num = 0;
+#endif
+	do {
+		rtos_sema_take(whc_usb_priv.usb_irq_sema, MUTEX_WAIT_TIMEOUT);
+		// tx callback
+		if (whc_usb_priv.irq_info.txdone != 0) {
+			whc_txbuf = (struct whc_txbuf_info_t *)whc_usb_priv.tx_buf;
+
+			whc_dev_free_txbuf(whc_txbuf);
+			whc_usb_priv.irq_info.txdone = 0;  // clear tx done flag
+			whc_usb_priv.tx_buf = NULL;
+			rtos_sema_give(whc_usb_priv.usb_tx_sema);
+		}
+		//rx callback
+#ifdef WHCH_TXAGG
+		whch_usb_dev_txagg_rx_handle();
+#else
+		while ((whc_usb_priv.irq_info.rxdone_epnum[whc_usb_priv.irq_info.task_ridx] != 0) &&
+			   (whc_usb_priv.irq_info.len[whc_usb_priv.irq_info.task_ridx] != 0)) {
+
+			ep_num = whc_usb_priv.irq_info.rxdone_epnum[whc_usb_priv.irq_info.task_ridx];
+			skb_rcv = (struct sk_buff *)whc_usb_priv.rx_skb_addr[EPNUM_TO_IDX(ep_num)];
+			len = whc_usb_priv.irq_info.len[whc_usb_priv.irq_info.task_ridx];
+
+			event = *(u32 *)skb_rcv->data;
+
+			if (event != WHC_WIFI_EVT_XIMT_PKTS) {
+				whc_dev_dispatch_event_copy(skb_rcv->data, len);
+				new_skb = skb_rcv;  // not need to malloc new skb
+			} else {
+				msg_info = (struct whc_msg_info *)skb_rcv->data;
+				if (((skbpriv.skb_buff_num - skbpriv.skb_buff_used) < 2) ||
+					((new_skb = dev_alloc_skb(USB_BUFSZ, USB_SKB_RSVD_LEN)) == NULL)) {
+					whc_usb_priv.irq_info.wait_xmit_skb = 1;
+					break;
+				}
+				skb_reserve(skb_rcv, sizeof(struct whc_msg_info));
+
+				skb_put(skb_rcv, msg_info->data_len);
+				skb_rcv->dev = (void *)((u32)msg_info->wlan_idx);
+				whc_dev_event_int_hdl((u8 *)msg_info, skb_rcv);
+				whc_usb_priv.rx_skb_addr[EPNUM_TO_IDX(ep_num)] = (u8 *)new_skb;
+			}
+
+			whc_usb_priv.irq_info.rxdone_epnum[whc_usb_priv.irq_info.task_ridx] = 0;
+			whc_usb_priv.irq_info.len[whc_usb_priv.irq_info.task_ridx] = 0;
+			whc_usb_priv.irq_info.task_ridx = (whc_usb_priv.irq_info.task_ridx + 1) % (WIFI_WHC_USB_BULKOUT_EP_NUM);
+			usbd_whc_receive_data(ep_num, new_skb->data, USB_BUFSZ, NULL); //need config usb buffer after clear rxdone_epnum list
+		}
+#endif
+
+	} while (1);
+}
+
+/* device->host  .transmitted*/
+static void whc_usb_dev_tx_done_cb(usbd_whc_ep_t *in_ep, int status)
+{
+	UNUSED(status);
+	usb_ep_info_t *info = &in_ep->ep.info;
+	if (info->addr == WIFI_WHC_USB_BULKIN_EP) {
+		if (whc_usb_priv.irq_info.txdone == 0) {
+			whc_usb_priv.irq_info.txdone = 1;
+			rtos_sema_give(whc_usb_priv.usb_irq_sema);
+		} else {
+			RTK_LOGS(NOTAG, RTK_LOG_ERROR, "irq task not process last tx done!\n");
+		}
+	}
+#if defined(CONFIG_BT) && defined(CONFIG_BT_INIC_USB)
+	else if (info->addr == USBD_WHC_BT_EP_INTR_IN) {
+		bt_inic_usb_evt_txdone_cb(in_ep->ep.xfer_buf);
+	} else if (info->addr == USBD_WHC_BT_EP_BULK_IN) {
+		bt_inic_usb_acl_txdone_cb(in_ep->ep.xfer_buf);
+	}
+#endif
+}
+
+void whc_usb_dev_status_changed_cb(u8 old_status, u8 new_status)
+{
+	UNUSED(old_status);
+	if (new_status == USBD_ATTACH_STATUS_ATTACHED) {
+		wifi_whc_usb_status = WIFI_WHC_USB_STATUS_ACTIVE;
+
+#if defined (CONFIG_AMEBAGREEN2)
+		/* acquire lock */
+		whc_dev_ps_resume_cb();
+#endif
+
+	} else if (new_status == USBD_ATTACH_STATUS_DETACHED) {
+#if defined(CONFIG_USBD_WHC_HOTPLUG)
+		wifi_whc_usb_status = WIFI_WHC_USB_STATUS_DISABLED;
+#else
+		wifi_whc_usb_status = WIFI_WHC_USB_STATUS_SUSPEND;
+#endif
+
+#if defined (CONFIG_AMEBAGREEN2)
+		/* release lock */
+		whc_dev_ps_set_tickps_cmd(WHC_CMD_TICKPS_R);
+#endif
+	}
+
+#if defined(CONFIG_BT) && defined(CONFIG_BT_INIC_USB)
+	bt_inic_status_change_cb(old_status, new_status);
+#endif
+#if defined(CONFIG_USBD_WHC_HOTPLUG)
+	rtos_sema_give(whc_usb_priv.usb_attach_status_sema);
+#endif
+}
+
+int whc_usb_dev_rxbuf_config_cb(void)
+{
+#ifdef WHCH_TXAGG
+	for (u8 i = 0; i < WIFI_WHC_USB_BULKOUT_EP_NUM; i++) {
+		whch_usb_dev_txagg_config_rxbuf(i);
+	}
+#else
+	struct sk_buff *skb_new = NULL;
+
+	skb_new = dev_alloc_skb(USB_BUFSZ, USB_SKB_RSVD_LEN);
+	whc_usb_priv.rx_skb_addr[EPNUM_TO_IDX(WIFI_WHC_USB_BULKOUT_1)] = (u8 *)skb_new;
+	usbd_whc_receive_data(WIFI_WHC_USB_BULKOUT_1, skb_new->data, USB_BUFSZ, NULL);
+
+	skb_new = dev_alloc_skb(USB_BUFSZ, USB_SKB_RSVD_LEN);
+	whc_usb_priv.rx_skb_addr[EPNUM_TO_IDX(WIFI_WHC_USB_BULKOUT_2)] = (u8 *)skb_new;
+	usbd_whc_receive_data(WIFI_WHC_USB_BULKOUT_2, skb_new->data, USB_BUFSZ, NULL);
+
+	if (WIFI_WHC_USB_BULKOUT_EP_NUM == 3) {
+		skb_new = dev_alloc_skb(USB_BUFSZ, USB_SKB_RSVD_LEN);
+		whc_usb_priv.rx_skb_addr[EPNUM_TO_IDX(WIFI_WHC_USB_BULKOUT_3)] = (u8 *)skb_new;
+		usbd_whc_receive_data(WIFI_WHC_USB_BULKOUT_3, skb_new->data, USB_BUFSZ, NULL);
+	}
+#endif
+
+#if defined(CONFIG_BT) && defined(CONFIG_BT_INIC_USB)
+	bt_inic_set_config();
+#endif
+	return 0;
+}
+
+static int whc_usb_dev_init_cb(void)
+{
+	int ret = HAL_OK;
+
+	// wifi use skb, not need to malloc buffer
+
+#ifdef WHCH_TXAGG
+	if (whch_usb_dev_txagg_pool_init() != 0) {
+		RTK_LOGS(NOTAG, RTK_LOG_ERROR, "whch txagg pool init fail\n");
+		return -1;
+	}
+
+	if (rtw_xmit_txagg_skb_pool_init() != 0) {
+		RTK_LOGS(NOTAG, RTK_LOG_ERROR, "whch txagg skb pool init fail\n");
+		return -1;
+	}
+#endif
+
+#if defined(CONFIG_BT) && defined(CONFIG_BT_INIC_USB)
+	if (usbd_whc_is_bt_en()) {
+		ret = bt_inic_usb_init();
+	}
+#endif
+	return ret;
+}
+
+static int whc_usb_dev_deinit_cb(void)
+{
+#ifndef WHCH_TXAGG
+	struct sk_buff *skb_rcv = NULL;
+#endif
+	struct whc_txbuf_info_t *whc_txbuf = NULL;
+	u8 i;
+
+	// free tx buffer
+	if (whc_usb_priv.tx_buf) {
+		whc_txbuf = (struct whc_txbuf_info_t *)whc_usb_priv.tx_buf;
+
+		if (whc_txbuf->is_skb) {
+			dev_kfree_skb_any((struct sk_buff *) whc_txbuf->ptr);
+		} else {
+			rtos_mem_free((u8 *)whc_txbuf->ptr);
+		}
+
+		rtos_mem_free((u8 *)whc_txbuf);
+
+		whc_usb_priv.tx_buf = NULL;
+		whc_usb_priv.irq_info.txdone = 0;
+		rtos_sema_give(whc_usb_priv.usb_tx_sema);
+	}
+
+	// free rx skb
+#ifdef WHCH_TXAGG
+	for (i = 0; i < WIFI_WHC_USB_BULKOUT_EP_NUM; i++) {
+		whc_usb_priv.cur_rxbuff[i] = NULL;
+		whc_usb_priv.irq_info.rxdone_epnum[i] = 0;
+		whc_usb_priv.irq_info.len[i] = 0;
+	}
+	if (whc_usb_priv.usb_rxbuf.usb_rxbuff_pool) {
+		for (i = 0; i < WHCH_USB_RXBUF_NUM; i++) {
+			if (whc_usb_priv.usb_rxbuf.usb_rxbuff_pool[i].buf) {
+				rtos_mem_free(whc_usb_priv.usb_rxbuf.usb_rxbuff_pool[i].buf);
+			}
+		}
+		rtos_mem_free((u8 *)whc_usb_priv.usb_rxbuf.usb_rxbuff_pool);
+		whc_usb_priv.usb_rxbuf.usb_rxbuff_pool = NULL;
+	}
+	rtw_xmit_txagg_skb_pool_deinit();
+#else
+	for (i = 0; i < WIFI_WHC_USB_BULKOUT_EP_NUM; i++) {
+		skb_rcv = (struct sk_buff *)whc_usb_priv.rx_skb_addr[i];
+		dev_kfree_skb_any((struct sk_buff *) skb_rcv);
+		whc_usb_priv.rx_skb_addr[i] = NULL;
+		whc_usb_priv.irq_info.rxdone_epnum[i] = 0;
+		whc_usb_priv.irq_info.len[i] = 0;
+	}
+#endif
+
+	whc_usb_priv.irq_info.intr_widx = 0;
+	whc_usb_priv.irq_info.task_ridx = 0;
+
+#if defined(CONFIG_BT) && defined(CONFIG_BT_INIC_USB)
+	if (usbd_whc_is_bt_en()) {
+		bt_inic_usb_deinit();
+	}
+#endif
+
+	return HAL_OK;
+}
+
+static int whc_usb_dev_setup_cb(usb_setup_req_t *req, u8 *buf)
+{
+#if !(defined(CONFIG_BT) && defined(CONFIG_BT_INIC_USB))
+	UNUSED(buf);
+#endif
+	int ret = HAL_ERR_PARA;
+	switch (req->bRequest) {
+#if defined(CONFIG_BT) && defined(CONFIG_BT_INIC_USB)
+	case USBD_WHC_VENDOR_REQ_BT_HCI_CMD:
+		ret = bt_inic_usb_hci_cmd_hdl(buf, req->wLength);
+		break;
+#endif
+	default:
+		/* Unsupported request, let the core stall EP0 as per USB 2.0 9.2.7 */
+		break;
+	}
+	return ret;
+}
+
+static int whc_usb_dev_clear_config_cb(void)
+{
+	return HAL_OK;
+}
+
+static const usbd_whc_cb_t whc_usb_dev_cb = {
+	.init = whc_usb_dev_init_cb,
+	.deinit = whc_usb_dev_deinit_cb,
+	.setup = whc_usb_dev_setup_cb,
+	.set_config = whc_usb_dev_rxbuf_config_cb,
+	.clear_config = whc_usb_dev_clear_config_cb,
+	.received = whc_usb_dev_rx_done_cb,
+	.transmitted = whc_usb_dev_tx_done_cb,
+	.status_changed = whc_usb_dev_status_changed_cb,
+};
+
+#if defined(CONFIG_USBD_WHC_HOTPLUG)
+static void whc_usb_hotplug_task(void)
+{
+	do {
+		rtos_sema_take(whc_usb_priv.usb_attach_status_sema, 0xFFFFFFFF);
+		if (wifi_whc_usb_status == WIFI_WHC_USB_STATUS_DISABLED) {
+			RTK_LOGS(NOTAG, RTK_LOG_INFO, "DETACHED, so reboot\n");
+			rtos_time_delay_ms(20);
+			System_Reset();
+		} else if (wifi_whc_usb_status == WIFI_WHC_USB_STATUS_ACTIVE) {
+			RTK_LOGS(NOTAG, RTK_LOG_INFO, "ATTACHED\n");
+		}
+	} while (1);
+
+	rtos_task_delete(NULL);
+}
+#endif // CONFIG_USBD_WHC_HOTPLUG
+
+void whc_usb_dev_init(void)
+{
+	int ret;
+
+	ret = usbd_init(&whc_usb_wifi_cfg);
+	if (ret != HAL_OK) {
+		RTK_LOGE(TAG_WLAN_INIC, "USBdevice init fail!\n");
+	}
+
+	ret = usbd_whc_init(&whc_usb_dev_cb);
+	if (ret != HAL_OK) {
+		RTK_LOGE(TAG_WLAN_INIC, "USB whc init fail!\n");
+	}
+
+#if defined (CONFIG_AMEBAGREEN2)
+	usbd_cg_register();
+	SOCPS_SetAPWakeEvent(WAKE_SRC_USB, ENABLE);
+#endif
+
+	rtos_mutex_create_static(&whc_usb_priv.tx_lock);
+	rtos_sema_create_static(&whc_usb_priv.usb_tx_sema, 1, 0xFFFFFFFF);
+	rtos_sema_create_static(&whc_usb_priv.usb_irq_sema, 0, 0xFFFFFFFF);
+
+#if defined(CONFIG_USBD_WHC_HOTPLUG)
+	rtos_sema_create_static(&whc_usb_priv.usb_attach_status_sema, 0, 1);
+	if (RTK_SUCCESS != rtos_task_create(NULL, (const char *const)"whc_usb_hotplug_task", (rtos_task_function_t)whc_usb_hotplug_task,
+										NULL, 1024, 8)) {
+		RTK_LOGI(NOTAG, "Create whc_usb_hotplug_task Err!!\n");
+	}
+#endif
+
+	if (RTK_SUCCESS != rtos_task_create(NULL, (const char *const)"whc_usb_dev_irq_task", (rtos_task_function_t)whc_usb_dev_irq_task,
+										NULL, 512, 1)) {
+		RTK_LOGI(NOTAG, "Create whc_usb_dev_irq_task Err!!\n");
+	}
+
+	RTK_LOGI(TAG_WLAN_INIC, "USB device init done!\n");
+}
+
+/*wifi recv pkt, send to host*/
+void whc_usb_dev_send(u8 *buf, u16 len, void *buf_alloc, u8 is_skb)
+{
+	int i = 0;
+	struct whc_txbuf_info_t *buf_info = NULL;
+	struct whc_buf_info *pbuf;
+
+	buf_info = whc_dev_alloc_buf_info(buf, len, buf_alloc, is_skb);
+	if (!buf_info) {
+		goto drop;
+	}
+	pbuf = &buf_info->txbuf_info;
+
+	if (wifi_whc_usb_status == WIFI_WHC_USB_STATUS_SUSPEND) {
+		RTK_LOGS(NOTAG, RTK_LOG_ALWAYS, "DEV Send when suspend\n");
+		usbd_wake_host();
+
+		/* confirm host already resumed before send data to host*/
+		for (i = 0; i < WIFI_WHC_USB_WAKE_HOST_MAX_WAIT_CNT; i++) {
+			rtos_time_delay_ms(WIFI_WHC_USB_WAKE_HOST_UNIT);
+			if (wifi_whc_usb_status == WIFI_WHC_USB_STATUS_ACTIVE) {
+				break;
+			}
+		}
+	}
+
+	rtos_mutex_take(whc_usb_priv.tx_lock, MUTEX_WAIT_TIMEOUT);
+
+	rtos_sema_take(whc_usb_priv.usb_tx_sema, MUTEX_WAIT_TIMEOUT);
+	whc_usb_priv.tx_buf = (u8 *)buf_info;
+	if (usbd_whc_transmit_data((u8)WIFI_WHC_USB_BULKIN_EP, (u8 *)pbuf->buf_addr, (u16)pbuf->buf_size, NULL) != 0) {
+		whc_usb_priv.tx_buf = NULL;
+		rtos_sema_give(whc_usb_priv.usb_tx_sema);
+		rtos_mutex_give(whc_usb_priv.tx_lock);
+		goto drop;
+	}
+
+	rtos_mutex_give(whc_usb_priv.tx_lock);
+
+	return;
+
+drop:
+	/* Dev drop tx, free tx skb or buffer */
+	if (is_skb) {
+		dev_kfree_skb_any((struct sk_buff *) buf_alloc);
+	} else {
+		rtos_mem_free((u8 *)buf_alloc);
+	}
+}
+
+u8 whc_usb_dev_bus_is_idle(void)
+{
+	/*Not yet implemented*/
+	return TRUE;
+}
+
+void whc_usb_dev_trigger_rx_handle(void)
+{
+	if (whc_usb_priv.irq_info.wait_xmit_skb == 1) {
+		whc_usb_priv.irq_info.wait_xmit_skb = 0;
+		rtos_sema_give(whc_usb_priv.usb_irq_sema);
+	}
+}
+

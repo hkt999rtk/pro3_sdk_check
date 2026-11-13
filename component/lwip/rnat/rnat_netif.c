@@ -1,0 +1,927 @@
+/**
+ * @file rnat_netif.c
+ * @brief R-NAT Netif Management
+ */
+
+#include "platform_autoconf.h"
+
+#if defined(CONFIG_RNAT)
+
+#include "rnat_netif.h"
+#include "lwip/dns.h"
+#include "ethernet.h"
+#include "ameba_soc.h"
+#include "dhcp/dhcps.h"
+#include "wifi_api.h"
+#include "lwip_ipnat.h"
+#include "dns_proxy.h"
+#if defined(CONFIG_LWIP_USB_ETHERNET)
+#include "usb_ethernet.h"
+#endif
+
+#ifndef TAG
+#define TAG "R-NAT"
+#endif
+
+/* ======================================================================== */
+/*                           Global Variables                               */
+/* ======================================================================== */
+
+/**
+ * @brief R-NAT netif array
+ */
+static rnat_netif_t *g_netif_array[NET_IF_NUM] = {NULL};
+
+/**
+ * @brief Current default gateway netif
+ */
+static rnat_netif_t *g_default_gw = NULL;
+
+/* ======================================================================== */
+/*                           Helper Functions                               */
+/* ======================================================================== */
+
+/**
+ * @brief  Validate role and IP method combination
+ * @param  role Network role (WAN/LAN)
+ * @param  ip_method IP configuration method
+ * @param  ip_info IP configuration info (can be NULL)
+ * @return true if valid, false if conflict detected
+ */
+static bool validate_role_and_ip_method(rnat_role_t role, rnat_ip_method_t ip_method, const rnat_ip_info_t *ip_info)
+{
+	if (role == RNAT_ROLE_WAN) {
+		/* WAN interface cannot act as DHCP server */
+		if (ip_method == RNAT_IP_METHOD_DHCP_SERVER) {
+			RTK_LOGS(TAG, RTK_LOG_ERROR, "WAN interface cannot use DHCP_SERVER mode\n");
+			return false;
+		}
+	} else if (role == RNAT_ROLE_LAN) {
+		/* LAN interface cannot act as DHCP client */
+		if (ip_method == RNAT_IP_METHOD_DHCP_CLIENT) {
+			RTK_LOGS(TAG, RTK_LOG_ERROR, "LAN interface cannot use DHCP_CLIENT mode\n");
+			return false;
+		}
+	}
+
+	if (ip_method == RNAT_IP_METHOD_STATIC && ip_info == NULL) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "STATIC mode requires custom IP configuration\n");
+		return false;
+	}
+
+	return true;
+}
+
+/**
+ * @brief  Get IP method string by ip_method value
+ * @param  ip_method IP configuration method
+ * @return String representation of the IP method
+ */
+static const char *get_ip_method_str(rnat_ip_method_t ip_method)
+{
+	switch (ip_method) {
+	case RNAT_IP_METHOD_DHCP_CLIENT:
+		return "DHCP-Client";
+	case RNAT_IP_METHOD_DHCP_SERVER:
+		return "DHCP-Server";
+	case RNAT_IP_METHOD_STATIC:
+		return "Static";
+	default:
+		return "Unknown";
+	}
+}
+
+/**
+ * @brief Get interface description string by index
+ * @param  idx Interface index
+ * @return Pointer to description string
+ */
+static const char *get_if_desc_by_idx(uint8_t idx)
+{
+	switch (idx) {
+	case NETIF_WLAN_STA_INDEX:
+		return "STA";
+	case NETIF_WLAN_AP_INDEX:
+		return "AP";
+#if defined(CONFIG_LWIP_ETHERNET)
+	case NETIF_ETH_INDEX:
+		return "ETH";
+#endif
+#if defined(CONFIG_LWIP_USB_ETHERNET)
+	case NETIF_USB_ETH_INDEX:
+		return "USB";
+#endif
+	default:
+		return "UNKNOWN";
+	}
+}
+
+/**
+ * @brief  Find rnat_netif from lwip netif pointer
+ * @param  lwip_netif LWIP netif pointer
+ * @return R-NAT netif object or NULL if not found
+ */
+rnat_netif_t *rnat_netif_get(struct netif *lwip_netif)
+{
+	for (int i = 0; i < NET_IF_NUM; i++) {
+		if (g_netif_array[i] && g_netif_array[i]->lwip_netif == lwip_netif) {
+			return g_netif_array[i];
+		}
+	}
+	return NULL;
+}
+
+/* ======================================================================== */
+/*                          DNS Cache Helpers (WAN only)                    */
+/* ======================================================================== */
+
+/**
+ * @brief  Save lwIP dns_servers[] into a WAN netif's dns_cache.
+ * @note   Call after a WAN receives its IP; DNS is valid at that point because
+ *         DHCP sets DNS (dhcp_handle_ack) before IP (dhcp_bind).
+ */
+static void rnat_netif_cache_dns(rnat_netif_t *netif)
+{
+	int i;
+	const ip_addr_t *s;
+
+	for (i = 0; i < DNS_MAX_SERVERS; i++) {
+		s = dns_getserver(i);
+		if (s && !ip_addr_isany_val(*s)) {
+			ip4_addr_copy(netif->dns_cache[i], *ip_2_ip4(s));
+		} else {
+			ip4_addr_set_zero(&netif->dns_cache[i]);
+		}
+	}
+}
+
+/**
+ * @brief  Restore a WAN's cached DNS to lwIP dns_servers[] and sync the proxy.
+ * @note   Repairs overwrites caused by a secondary WAN's DHCP lease.
+ *         dns_proxy_update_upstream_servers() is a no-op when DNS is unchanged.
+ */
+static void rnat_sync_gw_dns(const rnat_netif_t *gw)
+{
+	int i;
+	ip_addr_t addr;
+
+	if (!gw || gw->role != RNAT_ROLE_WAN) {
+		return;
+	}
+
+	for (i = 0; i < DNS_MAX_SERVERS; i++) {
+		if (!ip4_addr_isany_val(gw->dns_cache[i])) {
+			ip4_addr_copy(*ip_2_ip4(&addr), gw->dns_cache[i]);
+			dns_setserver(i, &addr);
+		} else {
+			dns_setserver(i, NULL);
+		}
+	}
+
+	dns_proxy_update_upstream_servers();
+}
+
+/* ======================================================================== */
+/*                          NETIF Extension Callback                        */
+/* ======================================================================== */
+
+#if LWIP_NETIF_EXT_STATUS_CALLBACK
+
+/**
+ * @brief LWIP netif extension callback
+ */
+static void rnat_netif_ext_callback(struct netif *netif,
+									netif_nsc_reason_t reason,
+									const netif_ext_callback_args_t *args)
+{
+	(void)args;
+
+	rnat_netif_t *rnat_netif = rnat_netif_get(netif);
+	if (!rnat_netif) {
+		return;
+	}
+
+	/* Update active flag based on link status */
+	if (reason & LWIP_NSC_LINK_CHANGED) {
+		bool link_up = netif_is_link_up(netif);
+
+		if (link_up != rnat_netif->is_active) {
+			rnat_netif->is_active = link_up;
+			RTK_LOGS(TAG, RTK_LOG_INFO, "[%s] LINK %s\n", rnat_netif->if_desc,
+					 link_up ? "UP - ACTIVE" : "DOWN - INACTIVE");
+
+			/* Call user status callback if registered */
+			if (rnat_netif->status_callback) {
+				rnat_netif->status_callback(rnat_netif, link_up, rnat_netif->callback_user_data);
+			}
+
+			if (rnat_netif->role == RNAT_ROLE_WAN && rnat_netif->ip_method == RNAT_IP_METHOD_STATIC) {
+				/* Cache DNS first */
+				if (link_up) {
+					rnat_netif_cache_dns(rnat_netif);
+				}
+
+				/* Update default gateway */
+				rnat_update_default_gw();
+
+				/* Reinitialize NAT tables */
+				ip_nat_reinitialize();
+
+				/* Restore default GW's DNS */
+				rnat_sync_gw_dns(g_default_gw);
+			} else if (rnat_netif->role == RNAT_ROLE_LAN) {
+				/* Reinitialize NAT tables */
+				rnat_update_default_gw();
+			}
+		}
+	}
+
+	/* Handle IPv4 address changes */
+	if (reason & LWIP_NSC_IPV4_ADDRESS_CHANGED) {
+		if (rnat_netif->role == RNAT_ROLE_WAN &&
+			rnat_netif->ip_method == RNAT_IP_METHOD_DHCP_CLIENT) {
+
+			/* Cache DNS first */
+			rnat_netif_cache_dns(rnat_netif);
+
+			rnat_netif_t *prev_gw = g_default_gw;
+			rnat_update_default_gw();
+
+			/* Reinit NAT only when routing changes */
+			if (rnat_netif == g_default_gw || g_default_gw != prev_gw) {
+				RTK_LOGS(TAG, RTK_LOG_INFO, "[%s] WAN %s, reinitializing NAT\n",
+						 rnat_netif->if_desc, (g_default_gw != prev_gw) ? "GW switched" : "got new IP");
+				ip_nat_reinitialize();
+			}
+
+			/* Restore default GW's DNS */
+			rnat_sync_gw_dns(g_default_gw);
+		}
+	}
+}
+
+NETIF_DECLARE_EXT_CALLBACK(rnat_callback);
+
+#endif /* LWIP_NETIF_EXT_STATUS_CALLBACK */
+
+/* ======================================================================== */
+/*                        Core Management API Implementation                 */
+/* ======================================================================== */
+
+/**
+ * @brief Initialize R-NAT system
+ */
+void rnat_init(void)
+{
+	g_default_gw = NULL;
+	memset(g_netif_array, 0, sizeof(g_netif_array));
+
+	netif_add_ext_callback(&rnat_callback, rnat_netif_ext_callback);
+}
+
+/**
+ * @brief Set status callback for a netif
+ * @param netif R-NAT netif object
+ * @param callback Callback function (NULL to disable)
+ * @param user_data User data passed to callback
+ */
+void rnat_netif_set_status_callback(rnat_netif_t *netif, rnat_netif_status_cb_t callback, void *user_data)
+{
+	if (!netif) {
+		return;
+	}
+
+	netif->status_callback = callback;
+	netif->callback_user_data = user_data;
+}
+
+/**
+ * @brief  Create and register a R-NAT netif
+ * @param  idx Interface index
+ * @param  config Inherent configuration
+ * @return rnat_netif_t pointer on success, NULL on failure
+ */
+rnat_netif_t *rnat_netif_create(uint8_t idx, const rnat_netif_config_t *config)
+{
+	if (!config || idx >= NET_IF_NUM) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "Invalid configuration or index\n");
+		return NULL;
+	}
+
+	/* Validate role and IP method combination */
+	if (!validate_role_and_ip_method(config->role, config->ip_method, config->ip_info)) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "Invalid role and IP method combination\n");
+		return NULL;
+	}
+
+	/* Check if already registered */
+	if (g_netif_array[idx]) {
+		RTK_LOGS(TAG, RTK_LOG_WARN, "Netif[%d] already registered\n", idx);
+		return g_netif_array[idx];
+	}
+
+	/* Allocate memory */
+	rnat_netif_t *netif = malloc(sizeof(rnat_netif_t));
+	if (!netif) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "Failed to allocate memory for netif[%d]\n", idx);
+		return NULL;
+	}
+
+	memset(netif, 0, sizeof(rnat_netif_t));
+
+	/* Initialize fields from config */
+	netif->idx = idx;
+	netif->role = config->role;
+	netif->ip_method = config->ip_method;
+	netif->priority = config->priority;
+	netif->is_active = false;
+	netif->lwip_netif = lwip_idx_get_netif(idx);
+	netif->dhcps_instance = NULL;
+	netif->status_callback = config->status_callback;
+	netif->callback_user_data = config->callback_user_data;
+
+	/* Set interface description */
+	if (config->if_desc) {
+		strncpy(netif->if_desc, config->if_desc, sizeof(netif->if_desc) - 1);
+		netif->if_desc[sizeof(netif->if_desc) - 1] = '\0';
+	} else {
+		strncpy(netif->if_desc, get_if_desc_by_idx(idx), sizeof(netif->if_desc) - 1);
+		netif->if_desc[sizeof(netif->if_desc) - 1] = '\0';
+	}
+
+	/* IP configuration */
+	if (config->role == RNAT_ROLE_LAN && config->ip_method == RNAT_IP_METHOD_DHCP_SERVER) {
+		/* For DHCP Server: Check subnet conflict and alloc non-conflicting IP */
+
+		/* Stop pre-existing DHCP server on this lwIP netif */
+		if (dhcps_get_from_netif(netif->lwip_netif) != NULL) {
+			dhcps_stop(netif->lwip_netif);
+			dhcps_deinit(netif->lwip_netif);
+		}
+
+		struct ip_addr check_ip;
+		bool use_custom_ip = false;
+
+		if (config->ip_info != NULL) {
+			ip_addr_copy_from_ip4(check_ip, config->ip_info->ip);
+			RTK_LOGS(TAG, RTK_LOG_INFO, "[%s] Custom IP: %d.%d.%d.%d\n", netif->if_desc,
+					 ip4_addr1(&config->ip_info->ip), ip4_addr2(&config->ip_info->ip),
+					 ip4_addr3(&config->ip_info->ip), ip4_addr4(&config->ip_info->ip));
+
+			/* Check if custom IP subnet conflicts */
+			if (!lwip_subnet_is_used(&check_ip, netif->lwip_netif)) {
+				/* No conflict, use custom IP */
+				use_custom_ip = true;
+			} else {
+				RTK_LOGS(TAG, RTK_LOG_WARN, "[%s] Custom IP subnet conflicts, auto-allocating...\n",
+						 netif->if_desc);
+			}
+		}
+
+		/* Alloc IP: use custom IP if no conflict, otherwise auto-alloc */
+		if (use_custom_ip) {
+			netifapi_netif_set_addr(netif->lwip_netif, &config->ip_info->ip,
+									&config->ip_info->netmask, &config->ip_info->gw);
+		} else {
+			/* Alloc non-conflicting IP from pool */
+			if (lwip_alloc_ip(netif->idx) != 0) {
+				RTK_LOGS(TAG, RTK_LOG_ERROR, "[%s] Failed to alloc IP\n", netif->if_desc);
+				free(netif);
+				return NULL;
+			}
+		}
+	} else if (config->ip_method == RNAT_IP_METHOD_STATIC && config->ip_info != NULL) {
+		/* STATIC mode with Custom IP: set IP directly, no DHCP */
+		RTK_LOGS(TAG, RTK_LOG_INFO, "[%s] Custom IP: %d.%d.%d.%d\n", netif->if_desc,
+				 ip4_addr1(&config->ip_info->ip), ip4_addr2(&config->ip_info->ip),
+				 ip4_addr3(&config->ip_info->ip), ip4_addr4(&config->ip_info->ip));
+
+		netifapi_netif_set_addr(netif->lwip_netif, &config->ip_info->ip,
+								&config->ip_info->netmask, &config->ip_info->gw);
+	}
+
+	g_netif_array[idx] = netif;
+
+	RTK_LOGS(TAG, RTK_LOG_INFO, "[%s] Created (role=%s, ip_method=%d, prio=%d)\n",
+			 netif->if_desc, config->role == RNAT_ROLE_WAN ? "WAN" : "LAN",
+			 config->ip_method, config->priority);
+
+	return netif;
+}
+
+/**
+ * @brief  Unregister and destroy a R-NAT netif
+ * @param  netif R-NAT netif object to destroy
+ * @return 0 on success, negative on failure
+ */
+int rnat_netif_destroy(rnat_netif_t *netif)
+{
+	if (!netif) {
+		return -1;
+	}
+
+	/* Stop first if active */
+	if (netif->is_active) {
+		rnat_netif_stop(netif);
+	}
+
+	/* Ensure DHCP Server is fully deinitialized */
+	if (netif->ip_method == RNAT_IP_METHOD_DHCP_SERVER && netif->dhcps_instance) {
+		dhcps_stop(netif->lwip_netif);
+		dhcps_deinit(netif->lwip_netif);
+		netif->dhcps_instance = NULL;
+	}
+
+	/* Remove from array */
+	for (int i = 0; i < NET_IF_NUM; i++) {
+		if (g_netif_array[i] == netif) {
+			g_netif_array[i] = NULL;
+			break;
+		}
+	}
+
+	RTK_LOGS(TAG, RTK_LOG_INFO, "[%s] Destroyed\n", netif->if_desc);
+
+	free(netif);
+	return 0;
+}
+
+/**
+ * @brief  Start WiFi STA interface
+ * @param  netif R-NAT object to start
+ * @param  arg WiFi configuration pointer
+ * @return 0 on success, negative on failure
+ */
+static int rnat_netif_start_sta(rnat_netif_t *netif, void *arg)
+{
+	int ret = 0;
+	struct rtw_network_info wifi_cfg = {0};
+	char password_buf[65] = {0};
+
+	/* Check if STA config is provided */
+	if (!arg) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "[%s] Config not provided\n", netif->if_desc);
+		return -1;
+	}
+
+	const rnat_wifi_config_t *sta_config = (const rnat_wifi_config_t *)arg;
+
+	RTK_LOGS(TAG, RTK_LOG_INFO, "[%s] Connecting to '%s'...\n", netif->if_desc, sta_config->ssid);
+
+	/* Configure SSID */
+	wifi_cfg.ssid.len = strlen(sta_config->ssid);
+	strncpy((char *)wifi_cfg.ssid.val, sta_config->ssid, sizeof(wifi_cfg.ssid.val) - 1);
+
+	/* Configure password and security type */
+	if (strlen(sta_config->password) > 0) {
+		strncpy(password_buf, sta_config->password, sizeof(password_buf) - 1);
+		wifi_cfg.password = (u8 *)password_buf;
+		wifi_cfg.password_len = strlen(sta_config->password);
+		wifi_cfg.security_type = RTW_SECURITY_WPA2_AES_PSK;
+	} else {
+		wifi_cfg.security_type = RTW_SECURITY_OPEN;
+	}
+
+	/* Configure channel */
+	wifi_cfg.channel = sta_config->channel;
+
+	/* Connect */
+	ret = wifi_connect(&wifi_cfg, 1);
+	if (ret != RTK_SUCCESS) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "[%s] wifi_connect failed (ret=%d)\n", netif->if_desc, ret);
+		return -1;
+	}
+
+	/* Request IP address */
+	if (netif->ip_method == RNAT_IP_METHOD_DHCP_CLIENT) {
+		u32 dhcp_status = lwip_request_ip(netif->idx);
+		if (dhcp_status == DHCP_ADDRESS_ASSIGNED) {
+			uint8_t *ip = lwip_get_ip(netif->idx);
+			RTK_LOGS(TAG, RTK_LOG_INFO, "[%s] DHCP got IP: %d.%d.%d.%d\n",
+					 netif->if_desc, ip[0], ip[1], ip[2], ip[3]);
+		} else {
+			RTK_LOGS(TAG, RTK_LOG_WARN, "[%s] DHCP failed to get IP\n", netif->if_desc);
+		}
+	}
+
+	return 0;
+}
+
+/**
+ * @brief  Start WiFi AP interface
+ * @param  netif R-NAT object to start
+ * @param  arg AP configuration pointer
+ * @return 0 on success, negative on failure
+ */
+static int rnat_netif_start_ap(rnat_netif_t *netif, void *arg)
+{
+	int ret = 0;
+	struct rtw_softap_info ap_cfg = {0};
+	int timeout = 20;
+
+	/* Check if AP config is provided */
+	if (!arg) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "[%s] Config not provided\n", netif->if_desc);
+		return -1;
+	}
+
+	const rnat_wifi_config_t *ap_config = (const rnat_wifi_config_t *)arg;
+	strncpy((char *)ap_cfg.ssid.val, ap_config->ssid, sizeof(ap_cfg.ssid.val) - 1);
+	ap_cfg.ssid.len = strlen(ap_config->ssid);
+
+	/* Configure password and security type */
+	if (strlen(ap_config->password) > 0) {
+		ap_cfg.password = (u8 *)ap_config->password;
+		ap_cfg.password_len = strlen(ap_config->password);
+		ap_cfg.security_type = RTW_SECURITY_WPA2_AES_PSK;
+	} else {
+		ap_cfg.security_type = RTW_SECURITY_OPEN;
+	}
+
+	/* Configure channel */
+	if (ap_config->channel == 0) {
+		/* Auto channel selection via ACS */
+		struct rtw_acs_config acs_config = {0};
+		ret = wifi_acs_find_ideal_channel(&acs_config, &ap_cfg.channel);
+		if (ret != RTK_SUCCESS) {
+			/* Fallback to default channel 6 for 2.4GHz */
+			ap_cfg.channel = 6;
+			RTK_LOGS(TAG, RTK_LOG_WARN, "[%s] ACS failed, using default channel %d\n",
+					 netif->if_desc, ap_cfg.channel);
+		}
+	} else {
+		/* Use manually configured channel */
+		ap_cfg.channel = ap_config->channel;
+	}
+
+	/* Deinit DHCP Server */
+	if (netif->ip_method == RNAT_IP_METHOD_DHCP_SERVER) {
+		dhcps_deinit(netif->lwip_netif);
+		netif->dhcps_instance = NULL;
+	}
+
+	/* Start AP */
+	wifi_stop_ap();
+	ret = wifi_start_ap(&ap_cfg);
+	if (ret != RTK_SUCCESS) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "[%s] wifi_start_ap failed (ret=%d)\n", netif->if_desc, ret);
+		return -1;
+	}
+
+	/* Wait for AP to be ready */
+	while (timeout > 0) {
+		struct rtw_wifi_setting setting;
+		wifi_get_setting(SOFTAP_WLAN_INDEX, &setting);
+		if (strlen((char *)setting.ssid) > 0) {
+			if (strcmp((char *)setting.ssid, (char *)ap_cfg.ssid.val) == 0) {
+				break;
+			}
+		}
+		rtos_time_delay_ms(1000);
+		timeout--;
+	}
+
+	if (timeout == 0) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "[%s] Start timeout\n", netif->if_desc);
+		return -1;
+	}
+
+	/* Initialize and start DHCP Server */
+	if (netif->ip_method == RNAT_IP_METHOD_DHCP_SERVER) {
+		netif->dhcps_instance = dhcps_init(netif->lwip_netif);
+		dhcps_start(netif->lwip_netif);
+	}
+
+	RTK_LOGS(TAG, RTK_LOG_INFO, "[%s] '%s' started on channel %d\n", netif->if_desc, ap_cfg.ssid.val, ap_cfg.channel);
+
+	return 0;
+}
+
+#if defined(CONFIG_LWIP_ETHERNET) || defined(CONFIG_LWIP_USB_ETHERNET)
+
+/**
+ * @brief Common link up/down callback for ETH and USB
+ * @param rnat_netif R-NAT netif object
+ * @param link_up 1=link up, 0=link down
+ */
+static void rnat_link_callback(rnat_netif_t *rnat_netif, int link_up)
+{
+	if (!rnat_netif) {
+		return;
+	}
+
+	if (link_up) {
+		RTK_LOGS(TAG, RTK_LOG_INFO, "=== %s Link UP ===\n", rnat_netif->if_desc);
+
+		if (!netif_is_up(rnat_netif->lwip_netif)) {
+			netifapi_netif_set_up(rnat_netif->lwip_netif);
+		}
+		netifapi_netif_set_link_up(rnat_netif->lwip_netif);
+
+		if (rnat_netif->ip_method == RNAT_IP_METHOD_DHCP_CLIENT) {
+			RTK_LOGS(TAG, RTK_LOG_INFO, "[%s] DHCP Client\n", rnat_netif->if_desc);
+
+			u32 dhcp_status = lwip_request_ip(rnat_netif->idx);
+			if (dhcp_status == DHCP_ADDRESS_ASSIGNED) {
+				uint8_t *ip = lwip_get_ip(rnat_netif->idx);
+				RTK_LOGS(TAG, RTK_LOG_INFO, "[%s] DHCP got IP: %d.%d.%d.%d\n",
+						 rnat_netif->if_desc, ip[0], ip[1], ip[2], ip[3]);
+			} else {
+				RTK_LOGS(TAG, RTK_LOG_WARN, "[%s] DHCP failed to get IP\n", rnat_netif->if_desc);
+			}
+		} else if (rnat_netif->ip_method == RNAT_IP_METHOD_DHCP_SERVER) {
+			RTK_LOGS(TAG, RTK_LOG_INFO, "[%s] DHCP Server\n", rnat_netif->if_desc);
+
+			dhcps_deinit(rnat_netif->lwip_netif);
+			rnat_netif->dhcps_instance = dhcps_init(rnat_netif->lwip_netif);
+			if (rnat_netif->dhcps_instance) {
+				dhcps_start(rnat_netif->lwip_netif);
+				RTK_LOGS(TAG, RTK_LOG_INFO, "[%s] DHCP Server started: %d.%d.%d.%d\n",
+						 rnat_netif->if_desc,
+						 ip4_addr1(netif_ip4_addr(rnat_netif->lwip_netif)),
+						 ip4_addr2(netif_ip4_addr(rnat_netif->lwip_netif)),
+						 ip4_addr3(netif_ip4_addr(rnat_netif->lwip_netif)),
+						 ip4_addr4(netif_ip4_addr(rnat_netif->lwip_netif)));
+			} else {
+				RTK_LOGS(TAG, RTK_LOG_ERROR, "[%s] Failed to init DHCP Server\n", rnat_netif->if_desc);
+			}
+		}
+	} else {
+		RTK_LOGS(TAG, RTK_LOG_INFO, "=== %s Link DOWN ===\n", rnat_netif->if_desc);
+
+		netifapi_netif_set_link_down(rnat_netif->lwip_netif);
+
+		if (rnat_netif->ip_method == RNAT_IP_METHOD_DHCP_CLIENT) {
+			lwip_dhcp_stop(rnat_netif->idx);
+			RTK_LOGS(TAG, RTK_LOG_INFO, "[%s] IP released\n", rnat_netif->if_desc);
+		} else if (rnat_netif->ip_method == RNAT_IP_METHOD_DHCP_SERVER) {
+			dhcps_stop(rnat_netif->lwip_netif);
+			dhcps_deinit(rnat_netif->lwip_netif);
+			rnat_netif->dhcps_instance = NULL;
+			RTK_LOGS(TAG, RTK_LOG_INFO, "[%s] DHCP Server stopped\n", rnat_netif->if_desc);
+		}
+	}
+}
+
+#endif /* CONFIG_LWIP_ETHERNET || CONFIG_LWIP_USB_ETHERNET */
+
+#if defined(CONFIG_LWIP_ETHERNET)
+static void rnat_eth_link_callback(int link_up)
+{
+	rnat_link_callback(g_netif_array[NETIF_ETH_INDEX], link_up);
+}
+
+static void rnat_eth_link_thread(void *param)
+{
+	u32 speed, duplex;
+	int last = -1;
+
+	UNUSED(param);
+	for (;;) {
+		if (rtos_sema_take(eth_link_sema, RTOS_MAX_TIMEOUT) != RTK_SUCCESS) {
+			continue;
+		}
+
+		int up = Ethernet_GetLinkStatus() ? 1 : 0;
+		if (up == last) {
+			continue;
+		}
+		last = up;
+
+		if (up) {
+			Ethernet_GetSpeedDuplex(&speed, &duplex);
+			RTK_LOGS(TAG, RTK_LOG_INFO, "Link Up: %s, %s\n", (speed == ETH_SPEED_100M) ? "100M" : (speed == ETH_SPEED_10M) ? "10M" : "Unknown",
+					 (duplex == ETH_FULL_DUPLEX) ? "Full Duplex" : "Half Duplex");
+		}
+		rnat_eth_link_callback(up);
+	}
+}
+
+/**
+ * @brief  Start Ethernet interface
+ * @param  netif R-NAT object to start
+ * @return 0 on success, negative on failure
+ */
+static int rnat_netif_start_eth(rnat_netif_t *netif)
+{
+	if (rtos_sema_create_binary(&eth_link_sema) != RTK_SUCCESS) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "[%s] Create link sema failed\n", netif->if_desc);
+		return -1;
+	}
+
+	if (rtos_task_create(NULL, "ETH_LINK", rnat_eth_link_thread, NULL, 1536, 3) != RTK_SUCCESS) {
+		RTK_LOGS(TAG, RTK_LOG_ERROR, "[%s] Create link thread failed\n", netif->if_desc);
+		rtos_sema_delete(eth_link_sema);
+		eth_link_sema = NULL;
+		return -1;
+	}
+
+	/* Initialize ETH */
+	eth_init();
+
+	RTK_LOGS(TAG, RTK_LOG_INFO, "[%s] Initialized\n", netif->if_desc);
+
+	return 0;
+}
+#endif
+
+#if defined(CONFIG_LWIP_USB_ETHERNET)
+static void rnat_usb_eth_link_callback(int link_up)
+{
+	rnat_link_callback(g_netif_array[NETIF_USB_ETH_INDEX], link_up);
+}
+
+/**
+ * @brief  Start USB-ETH interface
+ * @param  netif R-NAT object to start
+ * @return 0 on success, negative on failure
+ */
+static int rnat_netif_start_usb(rnat_netif_t *netif)
+{
+	/* Register usb-eth link callback */
+	usb_eth_register_link_cb(rnat_usb_eth_link_callback);
+
+	/* Initialize USB-ETH */
+	usb_eth_init();
+	RTK_LOGS(TAG, RTK_LOG_INFO, "[%s] Initialized\n", netif->if_desc);
+
+	return 0;
+}
+#endif
+
+/**
+ * @brief  Start a network interface
+ * @param  netif R-NAT netif object to start
+ * @param  arg Generic argument pointer
+ * @return 0 on success, negative on failure
+ */
+int rnat_netif_start(rnat_netif_t *netif, void *arg)
+{
+	if (!netif) {
+		return -1;
+	}
+
+	RTK_LOGS(TAG, RTK_LOG_INFO, "[%s] Starting netif...\n", netif->if_desc);
+
+	switch (netif->idx) {
+	case NETIF_WLAN_STA_INDEX:
+		return rnat_netif_start_sta(netif, arg);
+	case NETIF_WLAN_AP_INDEX:
+		return rnat_netif_start_ap(netif, arg);
+#if defined(CONFIG_LWIP_ETHERNET)
+	case NETIF_ETH_INDEX:
+		return rnat_netif_start_eth(netif);
+#endif
+#if defined(CONFIG_LWIP_USB_ETHERNET)
+	case NETIF_USB_ETH_INDEX:
+		return rnat_netif_start_usb(netif);
+#endif
+	default:
+		RTK_LOGS(TAG, RTK_LOG_WARN, "[%s] Unknown interface index %d\n", netif->if_desc, netif->idx);
+		return -1;
+	}
+}
+
+/**
+ * @brief  Stop a network interface
+ * @param  netif R-NAT netif object to stop
+ * @return 0 on success, negative on failure
+ */
+int rnat_netif_stop(rnat_netif_t *netif)
+{
+	if (!netif) {
+		return -1;
+	}
+
+	RTK_LOGS(TAG, RTK_LOG_INFO, "[%s] Stopping...\n", netif->if_desc);
+
+	switch (netif->idx) {
+	case NETIF_WLAN_STA_INDEX:
+		/* STA: Disconnect */
+		wifi_disconnect();
+		if (netif->ip_method == RNAT_IP_METHOD_DHCP_CLIENT) {
+			lwip_clear_ip(NETIF_WLAN_STA_INDEX);
+		}
+		RTK_LOGS(TAG, RTK_LOG_INFO, "[%s] Disconnected\n", netif->if_desc);
+		break;
+	case NETIF_WLAN_AP_INDEX:
+		/* AP: Deinit DHCP server and stop AP */
+		if (netif->ip_method == RNAT_IP_METHOD_DHCP_SERVER) {
+			dhcps_stop(netif->lwip_netif);
+			dhcps_deinit(netif->lwip_netif);
+			netif->dhcps_instance = NULL;
+		}
+		wifi_stop_ap();
+		RTK_LOGS(TAG, RTK_LOG_INFO, "[%s] Stopped\n", netif->if_desc);
+		break;
+#if defined(CONFIG_LWIP_ETHERNET)
+	case NETIF_ETH_INDEX:
+		/* ETH: Cannot be stopped manually */
+		RTK_LOGS(TAG, RTK_LOG_INFO, "[%s] Cannot stop manually, unplug cable\n", netif->if_desc);
+		break;
+#endif
+#if defined(CONFIG_LWIP_USB_ETHERNET)
+	case NETIF_USB_ETH_INDEX:
+		/* USB: Cannot be stopped manually */
+		RTK_LOGS(TAG, RTK_LOG_INFO, "[%s] Cannot stop manually, unplug device\n", netif->if_desc);
+		break;
+#endif
+	default:
+		RTK_LOGS(TAG, RTK_LOG_WARN, "[%s] Unknown interface index %d\n", netif->if_desc, netif->idx);
+		break;
+	}
+
+	return 0;
+}
+
+/**
+ * @brief Update default gateway based on route priority
+ */
+void rnat_update_default_gw(void)
+{
+	rnat_netif_t *best_netif = NULL;
+	int max_priority = -1;
+
+	/* Iterate through all registered netifs using array */
+	for (int i = 0; i < NET_IF_NUM; i++) {
+		rnat_netif_t *current = g_netif_array[i];
+		if (!current) {
+			continue;
+		}
+
+		if (current->is_active && (netif_ip4_addr(current->lwip_netif)->addr != 0)) {
+
+			/* Select highest priority */
+			if (current->priority > max_priority) {
+				max_priority = current->priority;
+				best_netif = current;
+			}
+		}
+	}
+
+	/* Update default gateway if changed */
+	if (best_netif && best_netif != g_default_gw) {
+		netif_set_default(best_netif->lwip_netif);
+		g_default_gw = best_netif;
+
+		RTK_LOGS(TAG, RTK_LOG_INFO, "Default GW changed to: %d.%d.%d.%d (%s, prio=%d)\n",
+				 ip4_addr1(netif_ip4_addr(best_netif->lwip_netif)),
+				 ip4_addr2(netif_ip4_addr(best_netif->lwip_netif)),
+				 ip4_addr3(netif_ip4_addr(best_netif->lwip_netif)),
+				 ip4_addr4(netif_ip4_addr(best_netif->lwip_netif)),
+				 best_netif->if_desc, max_priority);
+	}
+}
+
+/**
+ * @brief  Get current default gateway netif
+ * @return Default gateway netif or NULL
+ */
+rnat_netif_t *rnat_get_default_gw(void)
+{
+	return g_default_gw;
+}
+
+/**
+ * @brief Print current R-NAT status
+ */
+void rnat_print_status(void)
+{
+	RTK_LOGS(NOTAG, RTK_LOG_INFO, "R-NAT Status:\n");
+	RTK_LOGS(NOTAG, RTK_LOG_INFO, "====================================\n");
+
+	for (int i = 0; i < NET_IF_NUM; i++) {
+		rnat_netif_t *current = g_netif_array[i];
+		if (!current) {
+			continue;
+		}
+
+		const char *role_str = (current->role == RNAT_ROLE_WAN) ? "WAN" : "LAN";
+		const char *method_str = get_ip_method_str(current->ip_method);
+		const char *status = current->is_active ? "UP" : "DOWN";
+		const char *is_gw = (current == g_default_gw) ? " [DEFAULT GW]" : "";
+
+		if (netif_is_up(current->lwip_netif)) {
+			RTK_LOGS(NOTAG, RTK_LOG_INFO,
+					 "[%s] %s: IP=%d.%d.%d.%d GW=%d.%d.%d.%d Role=%s Method=%s Prio=%d%s\n",
+					 current->if_desc, status,
+					 ip4_addr1(netif_ip4_addr(current->lwip_netif)),
+					 ip4_addr2(netif_ip4_addr(current->lwip_netif)),
+					 ip4_addr3(netif_ip4_addr(current->lwip_netif)),
+					 ip4_addr4(netif_ip4_addr(current->lwip_netif)),
+					 ip4_addr1(netif_ip4_gw(current->lwip_netif)),
+					 ip4_addr2(netif_ip4_gw(current->lwip_netif)),
+					 ip4_addr3(netif_ip4_gw(current->lwip_netif)),
+					 ip4_addr4(netif_ip4_gw(current->lwip_netif)),
+					 role_str, method_str, current->priority, is_gw);
+		} else {
+			RTK_LOGS(NOTAG, RTK_LOG_INFO,
+					 "[%s] %s: IP=0.0.0.0 GW=0.0.0.0 Role=%s Method=%s Prio=%d%s\n",
+					 current->if_desc, status, role_str, method_str, current->priority, is_gw);
+		}
+	}
+
+	RTK_LOGS(NOTAG, RTK_LOG_INFO, "====================================\n\n");
+}
+
+#endif /* CONFIG_RNAT */

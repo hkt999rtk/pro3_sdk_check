@@ -1,0 +1,11 @@
+if (CHIP_ID STREQUAL RTS3921)
+    include(rts3921_config.cmake)
+else()
+    message(FATAL_ERROR "unknown chip id: ${CHIP_ID}")
+endif()
+
+function(target_include_chip_regs target scope prefix)
+    string(TOLOWER ${CHIP_ID} chip_id)
+    target_include_directories(${target} ${scope} ${prefix})
+    target_include_directories(${target} ${scope} ${prefix}/${chip_id})
+endfunction()

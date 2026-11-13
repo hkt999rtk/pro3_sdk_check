@@ -1,0 +1,198 @@
+
+//tool_version:1.4.18
+
+#ifndef _SYS_ZOOM_H_INC_
+#define _SYS_ZOOM_H_INC_
+
+#define SYS_ZOOM_BASE_ADDR 0x000d8000
+
+#define R_SYS_ZOOM_CONTROL1     (SYS_ZOOM_BASE_ADDR + 0x00000000)    //0xb8ad8000
+#define R_SYS_ZOOM_SPEED_CTRL     (SYS_ZOOM_BASE_ADDR + 0x00000004)    //0xb8ad8004
+#define R_SYS_ZOOM_LAST_BREAK     (SYS_ZOOM_BASE_ADDR + 0x00000008)    //0xb8ad8008
+#define R_SYS_ZOOM_IMAGE_MODE_SEL     (SYS_ZOOM_BASE_ADDR + 0x00000018)    //0xb8ad8018
+#define R_SYS_ZOOM_ISP_CLK_CTRL     (SYS_ZOOM_BASE_ADDR + 0x0000001c)    //0xb8ad801c
+#define R_SYS_ZOOM_AI_CHAN_SEL     (SYS_ZOOM_BASE_ADDR + 0x00000020)    //0xb8ad8020
+#define R_SYS_ZOOM_HOLE_ADDR_CTRL     (SYS_ZOOM_BASE_ADDR + 0x00000024)    //0xb8ad8024
+#define R_SYS_ZOOM_YUV_TRAN_CTRL     (SYS_ZOOM_BASE_ADDR + 0x00000028)    //0xb8ad8028
+#define R_SYS_ZOOM_MIPITX_SEL     (SYS_ZOOM_BASE_ADDR + 0x0000002c)    //0xb8ad802c
+#define R_SYS_ZOOM_DOWN_MEM_IDLE     (SYS_ZOOM_BASE_ADDR + 0x00000030)    //0xb8ad8030
+#define R_STREAM_ALIGN_MODE     (SYS_ZOOM_BASE_ADDR + 0x00000034)    //0xb8ad8034
+
+/* Bits of R_SYS_ZOOM_CONTROL1 (0x00000000) */
+
+#define ZOOM_EN_OFFSET 0
+#define ZOOM_EN_BITS   1
+#define ZOOM_EN_MASK   (((1 << 1) - 1) << 0)
+#define ZOOM_EN        (ZOOM_EN_MASK)
+
+#define ZOOM_DOWN_HALF_EN_OFFSET 1
+#define ZOOM_DOWN_HALF_EN_BITS   1
+#define ZOOM_DOWN_HALF_EN_MASK   (((1 << 1) - 1) << 1)
+#define ZOOM_DOWN_HALF_EN        (ZOOM_DOWN_HALF_EN_MASK)
+
+#define ZOOM_DOWN_QUART_EN_OFFSET 2
+#define ZOOM_DOWN_QUART_EN_BITS   1
+#define ZOOM_DOWN_QUART_EN_MASK   (((1 << 1) - 1) << 2)
+#define ZOOM_DOWN_QUART_EN        (ZOOM_DOWN_QUART_EN_MASK)
+
+#define ZOOM_DOWN_REG_LATCH_OFFSET 3
+#define ZOOM_DOWN_REG_LATCH_BITS   1
+#define ZOOM_DOWN_REG_LATCH_MASK   (((1 << 1) - 1) << 3)
+#define ZOOM_DOWN_REG_LATCH        (ZOOM_DOWN_REG_LATCH_MASK)
+
+/* Bits of R_SYS_ZOOM_SPEED_CTRL (0x00000004) */
+
+#define ZOOM_SPEED_DIV_OFFSET 0
+#define ZOOM_SPEED_DIV_BITS   5
+#define ZOOM_SPEED_DIV_MASK   (((1 << 5) - 1) << 0)
+#define ZOOM_SPEED_DIV        (ZOOM_SPEED_DIV_MASK)
+
+#define ZOOM_SPEED_MULT_OFFSET 8
+#define ZOOM_SPEED_MULT_BITS   3
+#define ZOOM_SPEED_MULT_MASK   (((1 << 3) - 1) << 8)
+#define ZOOM_SPEED_MULT        (ZOOM_SPEED_MULT_MASK)
+
+/* Bits of R_SYS_ZOOM_LAST_BREAK (0x00000008) */
+
+#define ZOOM_LAST_BREAK_OFFSET 0
+#define ZOOM_LAST_BREAK_BITS   10
+#define ZOOM_LAST_BREAK_MASK   (((1 << 10) - 1) << 0)
+#define ZOOM_LAST_BREAK        (ZOOM_LAST_BREAK_MASK)
+
+/* Bits of R_SYS_ZOOM_IMAGE_MODE_SEL (0x00000018) */
+
+#define DOUT_MODE0_OFFSET 0
+#define DOUT_MODE0_BITS   1
+#define DOUT_MODE0_MASK   (((1 << 1) - 1) << 0)
+#define DOUT_MODE0        (DOUT_MODE0_MASK)
+
+#define DOUT_MODE1_OFFSET 1
+#define DOUT_MODE1_BITS   1
+#define DOUT_MODE1_MASK   (((1 << 1) - 1) << 1)
+#define DOUT_MODE1        (DOUT_MODE1_MASK)
+
+#define DOUT_MODE2_OFFSET 2
+#define DOUT_MODE2_BITS   1
+#define DOUT_MODE2_MASK   (((1 << 1) - 1) << 2)
+#define DOUT_MODE2        (DOUT_MODE2_MASK)
+
+#define DOUT_MODE3_OFFSET 3
+#define DOUT_MODE3_BITS   1
+#define DOUT_MODE3_MASK   (((1 << 1) - 1) << 3)
+#define DOUT_MODE3        (DOUT_MODE3_MASK)
+
+/* Bits of R_SYS_ZOOM_ISP_CLK_CTRL (0x0000001c) */
+
+#define DUMMY_CLK_ON_OFFSET 0
+#define DUMMY_CLK_ON_BITS   1
+#define DUMMY_CLK_ON_MASK   (((1 << 1) - 1) << 0)
+#define DUMMY_CLK_ON        (DUMMY_CLK_ON_MASK)
+
+/* Bits of R_SYS_ZOOM_AI_CHAN_SEL (0x00000020) */
+
+#define YUV422TORGB888_EN_OFFSET 0
+#define YUV422TORGB888_EN_BITS   1
+#define YUV422TORGB888_EN_MASK   (((1 << 1) - 1) << 0)
+#define YUV422TORGB888_EN        (YUV422TORGB888_EN_MASK)
+
+/* Bits of R_SYS_ZOOM_HOLE_ADDR_CTRL (0x00000024) */
+
+#define HOLE_ADDR_CLR_OFFSET 0
+#define HOLE_ADDR_CLR_BITS   1
+#define HOLE_ADDR_CLR_MASK   (((1 << 1) - 1) << 0)
+#define HOLE_ADDR_CLR        (HOLE_ADDR_CLR_MASK)
+
+#define HOLE_ADDR_STAT_OFFSET 1
+#define HOLE_ADDR_STAT_BITS   1
+#define HOLE_ADDR_STAT_MASK   (((1 << 1) - 1) << 1)
+#define HOLE_ADDR_STAT        (HOLE_ADDR_STAT_MASK)
+
+/* Bits of R_SYS_ZOOM_YUV_TRAN_CTRL (0x00000028) */
+
+#define FULL_TO_LIMITED_EN0_OFFSET 0
+#define FULL_TO_LIMITED_EN0_BITS   1
+#define FULL_TO_LIMITED_EN0_MASK   (((1 << 1) - 1) << 0)
+#define FULL_TO_LIMITED_EN0        (FULL_TO_LIMITED_EN0_MASK)
+
+#define FULL_TO_LIMITED_EN1_OFFSET 1
+#define FULL_TO_LIMITED_EN1_BITS   1
+#define FULL_TO_LIMITED_EN1_MASK   (((1 << 1) - 1) << 1)
+#define FULL_TO_LIMITED_EN1        (FULL_TO_LIMITED_EN1_MASK)
+
+#define FULL_TO_LIMITED_EN2_OFFSET 2
+#define FULL_TO_LIMITED_EN2_BITS   1
+#define FULL_TO_LIMITED_EN2_MASK   (((1 << 1) - 1) << 2)
+#define FULL_TO_LIMITED_EN2        (FULL_TO_LIMITED_EN2_MASK)
+
+#define FULL_TO_LIMITED_EN3_OFFSET 3
+#define FULL_TO_LIMITED_EN3_BITS   1
+#define FULL_TO_LIMITED_EN3_MASK   (((1 << 1) - 1) << 3)
+#define FULL_TO_LIMITED_EN3        (FULL_TO_LIMITED_EN3_MASK)
+
+#define DITHER_EN0_OFFSET 4
+#define DITHER_EN0_BITS   1
+#define DITHER_EN0_MASK   (((1 << 1) - 1) << 4)
+#define DITHER_EN0        (DITHER_EN0_MASK)
+
+#define DITHER_EN1_OFFSET 5
+#define DITHER_EN1_BITS   1
+#define DITHER_EN1_MASK   (((1 << 1) - 1) << 5)
+#define DITHER_EN1        (DITHER_EN1_MASK)
+
+#define DITHER_EN2_OFFSET 6
+#define DITHER_EN2_BITS   1
+#define DITHER_EN2_MASK   (((1 << 1) - 1) << 6)
+#define DITHER_EN2        (DITHER_EN2_MASK)
+
+#define DITHER_EN3_OFFSET 7
+#define DITHER_EN3_BITS   1
+#define DITHER_EN3_MASK   (((1 << 1) - 1) << 7)
+#define DITHER_EN3        (DITHER_EN3_MASK)
+
+/* Bits of R_SYS_ZOOM_MIPITX_SEL (0x0000002c) */
+
+#define ISP2TX_SEL_OFFSET 0
+#define ISP2TX_SEL_BITS   2
+#define ISP2TX_SEL_MASK   (((1 << 2) - 1) << 0)
+#define ISP2TX_SEL        (ISP2TX_SEL_MASK)
+
+#define MP2LAN2TX_CH_SEL_OFFSET 2
+#define MP2LAN2TX_CH_SEL_BITS   1
+#define MP2LAN2TX_CH_SEL_MASK   (((1 << 1) - 1) << 2)
+#define MP2LAN2TX_CH_SEL        (MP2LAN2TX_CH_SEL_MASK)
+
+#define MP4LAN2TX_CH_SEL_OFFSET 3
+#define MP4LAN2TX_CH_SEL_BITS   1
+#define MP4LAN2TX_CH_SEL_MASK   (((1 << 1) - 1) << 3)
+#define MP4LAN2TX_CH_SEL        (MP4LAN2TX_CH_SEL_MASK)
+
+/* Bits of R_SYS_ZOOM_DOWN_MEM_IDLE (0x00000030) */
+
+#define ZOOM_MEM_IS_IDLE_OFFSET 0
+#define ZOOM_MEM_IS_IDLE_BITS   1
+#define ZOOM_MEM_IS_IDLE_MASK   (((1 << 1) - 1) << 0)
+#define ZOOM_MEM_IS_IDLE        (ZOOM_MEM_IS_IDLE_MASK)
+
+/* Bits of R_STREAM_ALIGN_MODE (0x00000034) */
+
+#define STREAM_ALIGN_MODE0_OFFSET 0
+#define STREAM_ALIGN_MODE0_BITS   3
+#define STREAM_ALIGN_MODE0_MASK   (((1 << 3) - 1) << 0)
+#define STREAM_ALIGN_MODE0        (STREAM_ALIGN_MODE0_MASK)
+
+#define STREAM_ALIGN_MODE1_OFFSET 8
+#define STREAM_ALIGN_MODE1_BITS   3
+#define STREAM_ALIGN_MODE1_MASK   (((1 << 3) - 1) << 8)
+#define STREAM_ALIGN_MODE1        (STREAM_ALIGN_MODE1_MASK)
+
+#define STREAM_ALIGN_MODE2_OFFSET 16
+#define STREAM_ALIGN_MODE2_BITS   3
+#define STREAM_ALIGN_MODE2_MASK   (((1 << 3) - 1) << 16)
+#define STREAM_ALIGN_MODE2        (STREAM_ALIGN_MODE2_MASK)
+
+#define STREAM_ALIGN_MODE3_OFFSET 24
+#define STREAM_ALIGN_MODE3_BITS   3
+#define STREAM_ALIGN_MODE3_MASK   (((1 << 3) - 1) << 24)
+#define STREAM_ALIGN_MODE3        (STREAM_ALIGN_MODE3_MASK)
+
+#endif /* _SYS_ZOOM_H_INC_ */

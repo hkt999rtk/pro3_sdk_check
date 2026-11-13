@@ -1,0 +1,336 @@
+/*
+ * Copyright (c) 2026 Realtek Semiconductor Corp.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#ifndef USBD_CDC_ECM_H
+#define USBD_CDC_ECM_H
+
+/* Includes ------------------------------------------------------------------*/
+
+#include "platform_autoconf.h"
+#include "usbd.h"
+#include "usb_cdc_ecm.h"
+#include "usb_os.h"
+#include "usb_ringbuf.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/** @addtogroup USB_Device_API USB Device API
+ *  @{
+ */
+
+/* Exported defines ----------------------------------------------------------*/
+
+/** @addtogroup USB_Device_Constants USB Device Constants
+ * @{
+ */
+/** @addtogroup Device_CDC_ECM_Constants Device CDC ECM Constants
+ * @{
+ */
+
+#define USBD_CDC_ECM_MAC_STR_LEN        (6)      /**< Length of the MAC address in bytes. */
+
+/* Defaults applied when the matching @ref usbd_cdc_ecm_config_t field is left 0. */
+#define USBD_CDC_ECM_DEFAULT_INTR_IN_INTERVAL         8U     /**< Default INTR IN bInterval. */
+#define USBD_CDC_ECM_DEFAULT_BULK_TX_QUEUE_DEPTH      5U     /**< Default TX ring buffer slot count. */
+#define USBD_CDC_ECM_DEFAULT_BULK_TX_TIMEOUT_MS       10U    /**< Default blocking-transmit timeout in ms. */
+#define USBD_CDC_ECM_DEFAULT_RX_TASK_STACK_SIZE       1280U  /**< Default RX delivery task stack size in bytes. */
+#define USBD_CDC_ECM_DEFAULT_RX_TASK_PRIORITY         6U     /**< Default RX delivery task priority. */
+
+/* Set to 1 to enable the periodic state-trace thread (default off).
+ * When enabled, a low-priority thread prints link/endpoint/TX-ring-buffer state,
+ * and per-path completion counters (including an RX thread heartbeat) once per
+ * USBD_CDC_ECM_TRACE_INTERVAL_MS so stalls can be diagnosed
+ * without a debugger.  Zero-cost when disabled: every dbg_* counter field and
+ * all instrumentation is compiled out. */
+#define USBD_CDC_ECM_STATE_TRACE_ENABLE 0
+
+/* Interface numbers */
+#define USBD_CDC_ECM_COMM_INTERFACE_NUM 0x00U  /**< Communication interface */
+#define USBD_CDC_ECM_DATA_INTERFACE_NUM 0x01U  /**< Data interface */
+
+/* Number of ping-pong RX buffers used to decouple USB OUT from upper-layer RX. */
+#define USBD_CDC_ECM_RX_BUF_NUM         2U
+
+/** @} End of Device_CDC_ECM_Constants group */
+/** @} End of USB_Device_Constants group */
+
+/* Exported types ------------------------------------------------------------*/
+
+/** @addtogroup USB_Device_Types USB Device Types
+ * @{
+ */
+/** @addtogroup Device_CDC_ECM_Types Device CDC ECM Types
+ * @{
+ */
+
+/**
+ * @brief Configuration for the CDC ECM class.
+ * @details Carries every CDC ECM option: the endpoint allocation, which the top-level
+ *          application owns, plus the MAC address and the TX/RX resource sizing. Used by
+ *          both standalone and composite modes. Device-global parameters (VID/PID, strings,
+ *          power attributes) live in @ref usbd_dev_info_t instead, and application-level
+ *          options such as hotplug or the network configuration belong in the example's own
+ *          configuration structure.
+ * @note  The structure is stored by pointer, not copied, so it shall remain valid until
+ *        @ref usbd_cdc_ecm_deinit.
+ */
+typedef struct {
+	/**
+	 * @brief MAC address reported to the host, 6 bytes, NULL for the class default.
+	 * @details Copied into the class at init and formatted into the iMACAddress string,
+	 *          so the buffer itself needs not outlive the init call.
+	 */
+	const u8 *mac;
+	const char *itf_str;        /**< iInterface string of the communication interface, NULL for none. */
+	u16 bulk_tx_timeout_ms;     /**< Blocking-transmit timeout in ms, 0 uses @ref USBD_CDC_ECM_DEFAULT_BULK_TX_TIMEOUT_MS. */
+	u16 rx_task_stack_size;     /**< RX delivery task stack size in bytes, 0 uses @ref USBD_CDC_ECM_DEFAULT_RX_TASK_STACK_SIZE. */
+	u8  bulk_in_addr;           /**< BULK IN endpoint address (e.g. 0x81). */
+	u8  bulk_out_addr;          /**< BULK OUT endpoint address (e.g. 0x01). */
+	u8  intr_in_addr;           /**< INTERRUPT IN endpoint address (e.g. 0x83). */
+	u8  intr_in_interval_hs;    /**< INTR IN bInterval at High Speed, 0 uses @ref USBD_CDC_ECM_DEFAULT_INTR_IN_INTERVAL. */
+	u8  intr_in_interval_fs;    /**< INTR IN bInterval at Full Speed, 0 uses @ref USBD_CDC_ECM_DEFAULT_INTR_IN_INTERVAL. */
+	/**
+	 * @brief Number of Ethernet frames the TX ring buffer can hold, 0 uses
+	 *        @ref USBD_CDC_ECM_DEFAULT_BULK_TX_QUEUE_DEPTH.
+	 * @details Each slot costs one max-size segment of heap, and deeper queues absorb longer
+	 *          bursts before @ref usbd_cdc_ecm_transmit has to block or drop.
+	 */
+	u8  bulk_tx_queue_depth;
+	u8  rx_task_priority;       /**< RX delivery task priority, 0 uses @ref USBD_CDC_ECM_DEFAULT_RX_TASK_PRIORITY. */
+} usbd_cdc_ecm_config_t;
+
+/**
+ * @brief Structure containing callback functions for the CDC ECM class.
+ * @details The user application should provide an instance of this structure
+ *          to handle class-specific events.
+ */
+typedef struct {
+	/**
+	 * @brief Called during CDC ECM class driver initialization to set up application resources.
+	 * @return 0 on success, non-zero on failure.
+	 */
+	int (*init)(void);
+
+	/**
+	 * @brief Called when the CDC ECM device is de-initialized for resource cleanup.
+	 * @return 0 on success, non-zero on failure.
+	 */
+	int (*deinit)(void);
+
+	/**
+	 * @brief Called to handle class-specific SETUP requests.
+	 * @note   This function is called within an interrupt service routine (ISR) context;
+	 *         time-consuming operations (e.g., `malloc`, `rtos_sema_take`) are not permitted.
+	 * @param[in] req: Pointer to the setup request packet. A device-to-host class request with a
+	 *            data stage is rejected by the class and never reaches this callback.
+	 * @param[out] buf: Pointer to a buffer for data stage of control transfers.
+	 * @return 0 on success, non-zero on failure.
+	 */
+	int (*setup)(usb_setup_req_t *req, u8 *buf);
+
+	/**
+	 * @brief Called when new data is received from the host on the BULK OUT endpoint.
+	 * @param[in] buf: Pointer to the received data buffer.
+	 * @param[in] len: Length of the received data in bytes.
+	 * @return 0 on success, non-zero on failure.
+	 */
+	int (*received)(u8 *buf, u32 len);
+
+	/**
+	 * @brief Called when USB attach status changes for application to support hot-plug events.
+	 * @note   This function is called within an interrupt service routine (ISR) context;
+	 *         time-consuming operations (e.g., `malloc`, `rtos_sema_take`) are not permitted.
+	 * @param[in] old_status: The previous attach status.
+	 * @param[in] status: The new attach status.
+	 */
+	void (*status_changed)(u8 old_status, u8 status);
+} usbd_cdc_ecm_cb_t;
+
+/**
+ * @brief Structure representing the CDC ECM device instance.
+ */
+typedef struct {
+	const usbd_cdc_ecm_config_t *cfg;      /**< Pointer to the class configuration (set by init). */
+	const usbd_cdc_ecm_cb_t *cb;           /**< User-defined callback structure. */
+	usb_dev_t *dev;                         /**< USB device instance. */
+
+	/* Interface and link state */
+	__IO u8 data_alt_setting;               /**< Alternate setting currently selected for the DATA interface:
+	                                             0 = default setting, no endpoints; 1 = BULK IN/OUT initialised.
+	                                             Ref CDC ECM 1.2 3.2.2 / USB 2.0 9.4.10: alt 0 has bNumEndpoints = 0,
+	                                             so the BULK pipes exist only in alt 1.  Written only by
+	                                             usbd_ecm_data_alt_start()/_stop(), which keep it in lockstep with the
+	                                             real endpoint state.  It therefore serves both purposes at once: the
+	                                             value GET_INTERFACE reports, and the "BULK endpoints are alive"
+	                                             predicate guarding every TX/RX submission.
+	                                             Deliberately distinct from connect_status, which is the link state
+	                                             reported to the host and also depends on the uplink state.
+	                                             The communication interface has alt 0 only, so it needs no field -
+	                                             GET_INTERFACE answers it with a literal 0.
+	                                             ISR writes (setup/clear_config/status_changed); task reads (transmit),
+	                                             hence volatile. */
+	__IO u8 connect_status;                 /**< Link state last reported to the host by NETWORK_CONNECTION: 1 only
+	                                             while the data interface is in alt 1 and the uplink is up.
+	                                             Written only in USB ISR context (setup/SOF/clear_config/
+	                                             status_changed); tasks only read it.  Must be volatile. */
+	__IO u8 uplink_status;                  /**< Upper-layer (uplink) link state set by usbd_cdc_ecm_set_link_status(),
+	                                             1=up, 0=down.  Written only by that task-context API, only read by
+	                                             the USB ISR, so it needs no lock.  Starts at 0 on every init. */
+	__IO u8 notify_state;                   /**< Active notification type.  Written only in USB ISR context. */
+	__IO u8 notify_retry;                   /**< 1 when a notification send failed or is queued;
+	                                               SOF handler (ISR) retries it.  Must be volatile. */
+	u8 ctrl_req_pending;                    /**< 1 if ctrl_req is waiting for its EP0 OUT data stage. */
+	u8 from_composite;                      /**< Flag indicating if part of a composite device. */
+	u8 if_base;                             /**< First interface number of this class; 0 in standalone
+	                                             mode unless the composite framework rebases it via
+	                                             set_interface_base(). */
+
+	/* TX */
+	u8 *bulk_tx_dma_buf;                   /**< DMA source for BULK IN. A frame is copied here from the ring buffer
+	                                             head before each transfer, so the DMA never reads ring buffer
+	                                             memory directly.  Size = USBD_CDC_ECM_BULK_BUF_MAX_SIZE. */
+	usb_os_sema_t bulk_tx_slot_sema;        /**< ISR -> tcpip: given each time a ring buffer slot is freed. */
+	usb_ringbuf_manager_t bulk_tx_rb;       /**< TX ring buffer: queues frames while a DMA is in flight. */
+	__IO u8 is_closing;                     /**< Set by deinit: transmit() rejects new callers before the TX
+	                                             resources are released.  Written under the USB critical section. */
+	__IO u8 xfer_users;                     /**< Number of tasks inside usbd_cdc_ecm_transmit(); deinit waits for
+	                                             it to drop to 0.  Updated under the USB critical section. */
+
+	/* RX ping-pong */
+	usb_os_sema_t rx_data_ready_sema;       /**< ISR -> thread: signals a buffer holds a frame. */
+	usb_os_task_t rx_task;                  /**< RX delivery thread handle. */
+	u8 *rx_buf[USBD_CDC_ECM_RX_BUF_NUM];    /**< Ping-pong RX buffers (ISR and RxThread). */
+	u8 *rx_msg_buf;                         /**< Buffer pointer handed to the RX thread for current frame. */
+	u32 rx_msg_len;                         /**< Frame length handed to the RX thread. */
+	__IO u32 rx_pending_len;               /**< Deferred frame length waiting in rx_buf[rx_xfer_idx]. ISR writes, task reads. */
+	u8 rx_xfer_idx;                         /**< Index of the buffer currently armed for USB OUT (0 or 1). */
+	__IO u8 rx_buf_free;                    /**< thread->ISR: 1=buffer available, 0=held by RX thread. */
+	__IO u8 rx_thread_running;              /**< RX thread loop guard; cleared to 0 to request exit. */
+
+	/* Endpoints and EP0 */
+	usbd_ep_t ep_bulk_in;           /**< BULK IN endpoint. */
+	usbd_ep_t ep_bulk_out;          /**< BULK OUT endpoint. */
+	usbd_ep_t ep_intr_in;           /**< INTERRUPT IN endpoint. */
+	usb_setup_req_t ctrl_req;               /**< Saved control request for EP0 OUT data phase. */
+
+	/* MAC address and strings */
+	u8 mac[USBD_CDC_ECM_MAC_STR_LEN];       /**< Device MAC address (6 bytes). */
+	/**
+	 * @brief MAC address as the 12 uppercase hex characters the iMACAddress string reports.
+	 * @details Registered with the core by pointer, so it has to outlive enumeration rather
+	 *          than being formatted into a local buffer on each request.
+	 */
+	char mac_str[(USBD_CDC_ECM_MAC_STR_LEN * 2U) + 1U];
+	u8 mac_str_idx;                         /**< iMACAddress string index from usbd_add_string(), 0 for none. */
+	u8 itf_str_idx;                         /**< Communication interface iInterface string index from usbd_add_string(), 0 for none. */
+
+#if USBD_CDC_ECM_STATE_TRACE_ENABLE
+	usb_os_task_t trace_task;               /**< State-trace thread handle; NULL when not running. */
+
+	/* Debug counters - incremented in the relevant hot-paths and read by the
+	 * trace thread.  u32 wraps gracefully; a frozen value flags a wedged path. */
+	u32 dbg_tx_cnt;                         /**< usbd_cdc_ecm_transmit() call count. */
+	u32 dbg_tx_drop_cnt;                    /**< Dequeued frames whose BULK IN submit failed (lost). */
+	u32 dbg_bulk_in_done_cnt;               /**< BULK IN completion ISR count. */
+	u32 dbg_bulk_out_done_cnt;              /**< BULK OUT completion ISR count. */
+	u32 dbg_intr_in_done_cnt;               /**< INTR IN completion ISR count. */
+	u32 dbg_rx_deliver_cnt;                 /**< Frames delivered to upper-layer callback. */
+	u32 dbg_rx_loop_cnt;                    /**< RX thread heartbeat; frozen => thread wedged. */
+	u8 trace_task_running;                  /**< State-trace thread loop guard; cleared to request exit. */
+#endif
+} usbd_cdc_ecm_dev_t;
+
+/** @} End of Device_CDC_ECM_Types group */
+/** @} End of USB_Device_Types group */
+
+/* Exported macros -----------------------------------------------------------*/
+
+/* Exported variables --------------------------------------------------------*/
+
+/* Exported functions --------------------------------------------------------*/
+
+/** @addtogroup USB_Device_Functions USB Device Functions
+ * @{
+ */
+/** @addtogroup Device_CDC_ECM_Functions Device CDC ECM Functions
+ * @{
+ */
+
+/**
+ * @brief Initializes class driver with application callback handler.
+ * @param[in] cb: Pointer to the user-defined callback structure.
+ * @param[in] cfg: Pointer to the class configuration. See @ref usbd_cdc_ecm_config_t.
+ * @return 0 on success, non-zero on failure.
+ */
+int usbd_cdc_ecm_init(const usbd_cdc_ecm_cb_t *cb, const usbd_cdc_ecm_config_t *cfg);
+
+#ifdef CONFIG_USBD_COMPOSITE
+/**
+ * @brief Initializes class driver as part of a composite device.
+ * @param[in] cb: Pointer to the user-defined callback structure.
+ * @param[in] cfg: Pointer to the class configuration. See @ref usbd_cdc_ecm_config_t.
+ * @return 0 on success, non-zero on failure.
+ */
+int usbd_composite_cdc_ecm_init(const usbd_cdc_ecm_cb_t *cb, const usbd_cdc_ecm_config_t *cfg);
+#endif
+
+/**
+ * @brief De-initializes the CDC ECM class driver.
+ * @note  Call it in task context and never from a task that calls usbd_cdc_ecm_transmit(): it
+ *        waits, without a bound, for every task inside usbd_cdc_ecm_transmit() to leave before the
+ *        TX resources are released, so such a caller would wait for itself.
+ * @note  Composite mode: call it after @ref usbd_composite_deinit. Before that the class is
+ *        still reachable from the USB ISR, so the call returns at once and releases nothing.
+ * @return None. This is a teardown path: apart from the composite case above, the class is always
+ *         unregistered and every resource it owns released, nothing for the caller to recover from.
+ */
+void usbd_cdc_ecm_deinit(void);
+
+/**
+ * @brief Transmits data to the host over the BULK IN endpoint.
+ * @param[in] buf: Pointer to the data buffer to be transmitted.
+ * @param[in] len: Length of the data in bytes, at most USB_CDC_ECM_MAX_SEGMENT_SIZE (no FCS).
+ * @param[in] block: Blocking mode flag (0 for non-blocking, else block up to
+ *                   @ref usbd_cdc_ecm_config_t::bulk_tx_timeout_ms).
+ * @return 0 on success, non-zero on failure.
+ * @note   The frame is only queued here; the USB ISR (SOF and BULK IN completion) starts the
+ *         transfer, so @ref USBD_SOF_INTR must be set in usbd_config_t::ext_intr_enable.
+ *         Task context only, a call in interrupt context is rejected. It may run concurrently
+ *         with usbd_cdc_ecm_deinit(), which waits for it to leave before releasing resources.
+ */
+int usbd_cdc_ecm_transmit(const u8 *buf, u32 len, u8 block);
+
+/**
+ * @brief  Gets the link state last reported to the host.
+ * @return 1: Link is up, i.e. the host activated the data interface and the uplink is up.
+ *         0: Link is down.
+ */
+int usbd_cdc_ecm_get_link_status(void);
+
+/**
+ * @brief  Reports the upper-layer network link state to the host (edge-triggered).
+ * @details The host is notified with NETWORK_CONNECTION only when the reported state
+ *          actually changes; calling repeatedly with the same value is a no-op.
+ *          Call from the layer that owns the real uplink (e.g. Wi-Fi / cellular)
+ *          on link up/down events.  The uplink starts down at every
+ *          @ref usbd_cdc_ecm_init, so call this after each init once the uplink is up.
+ * @param[in] link_up: Non-zero when the link is up, zero when it is down.
+ * @return 0 on success.
+ */
+int usbd_cdc_ecm_set_link_status(u8 link_up);
+
+/** @} End of Device_CDC_ECM_Functions group */
+/** @} End of USB_Device_Functions group */
+
+/** @} End of USB_Device_API group */
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* USBD_CDC_ECM_H */

@@ -1,0 +1,604 @@
+mainmenu "AmebaPro3 Configuration"
+
+comment "--------MENUCONFIG FOR General---------"
+
+#Release flag, set to y after release
+config AMEBA_RLS
+  def_bool y
+
+config AMEBAPRO3
+    def_bool y
+
+#---------- FEATURE LIST START-----------#
+#All features are invisible in menuconfig
+
+config SUPPORT_NAND_FLASH
+    def_bool y
+
+config SUPPORT_FATFS_USB
+    def_bool y
+
+config SUPPORT_SDIOH
+    def_bool y
+
+config SUPPORT_SD_CARD
+    def_bool y
+
+config SUPPORT_USB
+    def_bool y
+
+config SUPPORT_USBD_UAC
+    def_bool n
+
+config SUPPORT_SMP
+    def_bool n
+
+config SUPPORT_USBH_ECM
+	def_bool y
+
+#---------- FEATURE LIST END-------------#
+
+orsource "../../../soc/common/image3/Kconfig.trustzone"
+
+menu "CONFIG Memory Arch"
+	if !LOADMP && !LOADAP
+		config DISABLE_PSRAM
+			bool "DISABLE PSRAM"
+			default n
+
+		if !DISABLE_PSRAM
+			config PSRAM_CAL
+				bool "Enable PSRAM calibration"
+				default n
+		endif
+
+		config DISABLE_DDR
+			bool "DISABLE DDR"
+			default n
+	endif
+
+	if !DISABLE_DDR
+		choice
+			prompt "DDR Size"
+			default DDR_128M
+			
+			config DDR_128M
+				bool "128M"
+				
+			config DDR_256M
+				bool "256M"
+		endchoice
+		choice
+			prompt "DDR_PHY Frequency"
+			default DDR_PHY_FREQ_933MHZ
+
+			config DDR_PHY_FREQ_933MHZ
+				bool "933MHz"
+
+			config DDR_PHY_FREQ_900MHZ
+				bool "900MHz"
+
+			config DDR_PHY_FREQ_850MHZ
+				bool "850MHz"
+
+			config DDR_PHY_FREQ_800MHZ
+				bool "800MHz"
+
+			config DDR_PHY_FREQ_533MHZ
+				bool "533MHz"
+		endchoice
+
+		menuconfig DDR_ODT_ENABLE
+			bool "Enable DDR ODT"
+			default y
+
+		if DDR_ODT_ENABLE
+			config DRAM_DIE_ODT_ENABLE
+				bool "Enable DRAM-side ODT (MR2.RTT_WR)"
+				default y
+
+			config DDR_PHY_ODT_ENABLE
+				bool "Enable PHY-side ODT (calibrated pad termination)"
+				default y
+		endif
+
+		config DDR_PHY_THREE_POINT_K_ENABLE
+			bool "Enable DDR PHY Three Point K"
+			default n
+
+		config DDR_ENABLE_SET_PRIORITY
+			bool "Eanble DDRC QoS priority"
+			default y
+
+		config DDR_ENABLE_SET_NONCE
+			bool "Setup DDRC secure zone nonces"
+			default n
+	endif
+	if LOADMP || LOADAP
+		comment "Cannot disable PSRAM or DDR when LOADMP or LOADAP selected"
+	endif
+endmenu
+
+menu "CONFIG Link Option"
+    choice
+        prompt "IMG1(Bootloader) running on SRAM?"
+        default IMG1_SRAM
+        config IMG1_SRAM
+            bool "SRAM"
+    endchoice
+
+    choice
+        prompt "IMG2(FP Application) running on SRAM"
+        default IMG2_SRAM_FOR_FP
+        config IMG2_SRAM_FOR_FP
+            bool "SRAM"
+    endchoice
+
+    choice
+        prompt "IMG2(NP Application) running on PSRAM"
+        default IMG2_PSRAM_FOR_NP
+        config IMG2_PSRAM_FOR_NP
+            bool "PSRAM"
+    endchoice
+
+    choice
+        prompt "IMG2(VP Application) running on PSRAM?"
+        default IMG2_PSRAM_FOR_VP
+        config IMG2_PSRAM_FOR_VP
+            bool "PSRAM"
+    endchoice
+
+	choice
+        prompt "IMG2(AP Application) running on DDR?"
+        default IMG2_DDR_FOR_AP
+        config IMG2_DDR_FOR_AP
+            bool "DDR"
+    endchoice
+
+    if TRUSTZONE
+        choice
+            prompt "NP IMG3(SecureImage) running on PSRAM?"
+            default IMG3_PSRAM_FOR_NP
+            config IMG3_PSRAM_FOR_NP
+                bool "PSRAM"
+        endchoice
+    endif
+
+    config PSRAM_ALL_FOR_AP_HEAP
+        def_bool n
+endmenu
+
+menu "CONFIG Mass Production"
+    config MP_INCLUDED
+        bool "Enable MP"
+    if MP_INCLUDED
+        choice
+            prompt "MP Mode"
+            default MP_SHRINK
+            config MP_EXPAND
+                bool "expand"
+            config MP_SHRINK
+                bool "shrink"
+        endchoice
+    endif
+endmenu
+
+rsource "../../../at_cmd/Kconfig"
+
+rsource "../../../soc/common/rtk_assert/Kconfig"
+
+rsource "../../../file_system/Kconfig"
+
+rsource "../../../soc/amebapro3/sw/os/Kconfig"
+
+rsource "../../../ota/Kconfig"
+
+rsource "../../../usb/Kconfig"
+
+rsource "../../usrcfg/amebapro3/Kconfig"
+
+menu "CONFIG APPLICATION"
+
+    orsource "../../../ui/Kconfig"
+
+    orsource "../../../audio/Kconfig"
+
+    orsource "../../../utils/ipc/Kconfig"
+
+    orsource "../../../dynamic_app/Kconfig"
+
+    menu "AI Config"
+        orsource "../../../tflite_micro/Kconfig"
+        orsource "../../../aivoice/Kconfig"
+    endmenu
+
+    menu "Range Config"
+        config RANGE_ENABLED
+            bool "Range Enable"
+    endmenu
+
+    orsource "${RTK_APP_DIR}/Kconfig"
+
+    orsource "../../../soc/common/diagnose/Kconfig"
+	orsource "../../../soc/amebapro3/swlib/Kconfig"
+endmenu
+
+menu "CONFIG VIDEO SOFTWARE"
+
+	config VIDEO_SW
+		bool "ENABLE VIDEO SOFTWARE"
+		default y
+		select FREERTOS_POSIX
+	if VIDEO_SW
+		orsource "../../../soc/amebapro3/video/Kconfig"
+		config BUILD_VIDEO_TEST_TOOL
+			bool "Build Video Test Tool"
+			default n
+	endif
+	config FAST_CAMERA_START_FOR_AP
+		bool "ENABLE FAST CAMERA START (FCS)"
+		depends on VIDEO_SW && LOADAP && LOADMP
+		default n
+		select FAST_CAMERA_START_FOR_VP
+	config FAST_CAMERA_START_FOR_VP
+		bool
+endmenu
+
+menu "CONFIG AUDIO SOFTWARE"
+
+    config AUDIO_SW
+		bool "ENABLE AUDIO SOFTWARE"
+		default y
+	if AUDIO_SW
+        orsource "../../../soc/amebapro3/audio/Kconfig"
+        orsource "../../../soc/amebapro3/sw/media_example/ap_media_example/audio_example_src/audio_test_tool/Kconfig"
+	endif
+endmenu
+
+comment "-----Connectivity Config-----"
+menu "CONFIG WHC INTF"
+    depends on WLAN_MENU
+    choice
+        prompt "WHC MODE"
+        default WHC_INTF_IPC_MENU
+			config WHC_INTF_IPC_MENU
+				bool "WHC_IPC"
+				select WHC_DEV_FOR_NP
+				select WHC_HOST_FOR_AP
+			config WIFI_SINGLE_CORE_MENU
+				bool "SINGLE CORE"
+				select WHC_NONE_FOR_NP
+    endchoice
+
+    if WHC_INTF_IPC_MENU && !LINUX_FW_EN
+        config WHC_DEV_TCPIP_KEEPALIVE
+            bool "Enable NP TCP/IP keep-alive (bridge mode)"
+            default y
+            select MBEDTLS_ENABLED if WHC_DEV && MBEDTLS_ENABLED_MENU
+            select MBEDTLS_SSL_PROTO_TLS1_3 if WHC_DEV && MBEDTLS_SSL_PROTO_TLS1_3_MENU
+    endif
+
+    config WHC_HOST_FOR_AP
+        bool
+    config WHC_DEV_FOR_NP
+        bool
+    config WHC_HOST_FOR_NP
+        bool
+    config WHC_NONE_FOR_NP
+        bool
+    config WHC_WPA_SUPPLICANT_OFFLOAD_FOR_NP
+        bool "WPA supplicant offload to device (NP)"
+        default y
+        depends on WHC_DEV_FOR_NP && WHC_INTF_IPC_MENU && !MP_SHRINK
+    config WHC_WIFI_API_PATH
+        bool
+	config WHC_NONE_FOR_AP
+        bool
+	config WHC_NONE_FOR_VP
+        bool
+    config MBEDTLS_SSL_IN_CONTENT_LEN
+        int
+        default MBEDTLS_SSL_IN_CONTENT_LEN_MENU if WHC_DEV && WHC_DEV_TCPIP_KEEPALIVE && MBEDTLS_ENABLED_MENU
+        default 16384 if WHC_DEV && WHC_DEV_TCPIP_KEEPALIVE
+    config MBEDTLS_SSL_OUT_CONTENT_LEN
+        int
+        default MBEDTLS_SSL_OUT_CONTENT_LEN_MENU if WHC_DEV && WHC_DEV_TCPIP_KEEPALIVE && MBEDTLS_ENABLED_MENU
+        default 4096 if WHC_DEV && WHC_DEV_TCPIP_KEEPALIVE
+endmenu
+
+menu "CONFIG WIFI"
+    config WLAN_MENU
+        bool "Enable Wifi"
+        default y
+
+    if WLAN_MENU
+
+        rsource "../../../wifi/Kconfig.wifi"
+
+        config WHC_INTF_IPC_MENU
+            bool
+            select WHC_INTF_IPC
+            select WHC_WIFI_API_PATH
+            select WLAN_FOR_NP if WHC_HOST||WHC_DEV
+			select WLAN_FOR_AP if WHC_HOST||WHC_DEV
+            select LWIP_LAYER_FOR_AP if WHC_HOST && !MP_SHRINK
+            select LWIP_LAYER_FOR_NP if WHC_DEV_TCPIP_KEEPALIVE
+            select ENABLE_WPS if WHC_HOST && WIFI_WPS_ENABLE_MENU
+            select ENABLE_WPS_DISCOVERY if ENABLE_WPS
+            select LWIP_NETCONN_SEM_PER_THREAD if WHC_HOST
+
+        config WIFI_SINGLE_CORE_MENU
+            bool
+            #depends on WHC_NONE
+            select WLAN_FOR_NP
+            select LWIP_LAYER_FOR_NP
+            select ENABLE_WPS if WIFI_WPS_ENABLE_MENU
+            select ENABLE_WPS_DISCOVERY if ENABLE_WPS
+
+    endif
+
+    if !WLAN_MENU
+        config WLAN_DISABLE
+            bool
+    endif
+
+
+    config WLAN
+        bool
+	config WLAN_FOR_NP
+		bool
+	config WLAN_FOR_AP
+		bool
+    config WHC_INTF_IPC
+        bool
+    config LWIP_LAYER
+        bool
+    config LWIP_LAYER_FOR_NP
+        bool
+    config LWIP_LAYER_FOR_AP
+        bool
+    config WHC_INTF_SPDIO
+        bool
+    config WHC_INTF_SPI
+        bool
+    config WHC_INTF_USB
+        bool
+    config WIFI_FW_EN
+        bool
+    config ENABLE_WPS
+        bool
+    config ENABLE_WPS_DISCOVERY
+        bool
+    config LWIP_NETCONN_SEM_PER_THREAD
+        bool
+
+endmenu
+
+config VFS_SUPPORTED
+    depends on !(MP_SHRINK) && (WHC_HOST || WHC_NONE || (WHC_DEV && WHC_WPA_SUPPLICANT_OFFLOAD_FOR_NP))
+    def_bool y
+
+menu "CONFIG BT"
+    config BT_MENU
+        bool "Enable BT"
+    if BT_MENU
+        # IC BT capability
+        config BT_HAS_BREDR
+            def_bool n
+        config BT_HAS_MESH
+            def_bool n
+        config BT_HAS_LEAUDIO
+            def_bool n
+
+        config BT
+            depends on WHC_HOST || WHC_NONE
+            bool
+            default y
+            select FTL_ENABLED
+
+        config FTL_ENABLED
+            bool
+
+        config BT_ENABLE_FAST_MP
+            def_bool MP_INCLUDED
+
+        rsource "../../../bluetooth/Kconfig"
+
+    endif
+endmenu
+
+
+rsource "../../../lwip/Kconfig"
+
+#orsource "../../../wpan/Kconfig"
+
+rsource "../../../ssl/Kconfig"
+
+rsource "../../../rtk_coex/Kconfig.coex"
+
+if !AMEBA_RLS
+comment "---------Bootloader Config---------"
+
+menu "Bootloader"
+    orsource "../../../soc/amebapro3/loader/bootloader/Kconfig"
+endmenu
+endif
+if AMEBA_RLS
+config LOADAP
+    def_bool y
+config LOADMP
+    def_bool y
+config LOADFP
+    def_bool y
+config LOADNP
+    def_bool y
+endif
+
+comment "---------Monitor Config---------"
+menu "Monitor Options"
+    orsource "../../../soc/amebapro3/app/monitor/Kconfig"
+endmenu
+
+comment "---------Tickless Development Config---------"
+menu "Tickless Development"
+    orsource "../../../soc/amebapro3/osportable/Kconfig"
+endmenu
+
+
+if !AMEBA_RLS
+
+comment "---------Test Config---------"
+
+menu "Verification and Test"
+    orsource "../../../soc/amebapro3/Kconfig"
+endmenu
+
+endif
+
+comment "--------Build Config---------"
+
+menu "Build Option"
+    config FPGA
+        bool "Select FPGA"
+        depends on !AMEBA_RLS
+        default n
+
+	if FPGA
+		comment "Choose the FPGA bitfile version"
+		choice
+			prompt "FPGA BIT VERSION"
+			default BIT_V14
+
+			config BIT_V14
+				bool "V14"
+
+			config BIT_V10
+				bool "V10"
+
+			comment "for V5/V6/V9"
+			config BIT_V6
+				bool "V6"
+		endchoice
+
+		comment "SRAM only mode for FPGA one AXF, not valid in ASIC"
+		config SRAM_ONLY
+			bool "SRAM Only"
+
+		config NO_RCC
+			bool "RCC invalid"
+			default n
+	endif
+
+    config PXP
+        bool "Select PXP"
+        depends on !AMEBA_RLS
+        default n
+
+	if PXP
+		config NO_RCC
+			bool "RCC invalid"
+			default n
+	endif
+
+    config FT2_VERIFY
+        bool "Select FT2_VERIFY"
+        depends on !AMEBA_RLS
+        default n
+
+    config OLT_VERIFY
+        bool "Select OLT_VERIFY"
+        depends on !AMEBA_RLS
+        default n    
+
+	choice
+		prompt "Chip Version"
+		default AMEBAPRO3_A_CUT
+		config AMEBAPRO3_A_CUT
+			bool "AMEBAPRO3_A_Cut"
+
+		config AMEBAPRO3_B_CUT
+			bool "AMEBAPRO3_B_Cut"
+	endchoice
+
+	config ROM
+		bool "Build ROM only [not update rom_symobl]"
+		depends on !AMEBA_RLS
+		depends on !FPGA || !PXP
+		default n
+	if ROM || FPGA || PXP
+		choice
+			prompt "Building Rom Version"
+			default ROM_V1
+			config ROM_V1
+				bool "ROM_V1 for A-CUT"
+
+			config ROM_V2
+				bool "ROM_V2 for B-CUT"
+		endchoice
+	endif
+
+	menu "CONFIG Linux"
+		config LINUX_FW_EN
+			bool "Support Linux"
+			help
+				Enable this option to support linux firmware loading. Build, BL1 only, no RTOS FIP
+
+			default n
+	endmenu
+    
+	choice 
+		prompt "4K ISP Mode"
+		default 4K_OFF
+
+		config 4K_OFF
+			bool "Disable 4K ISP"
+		config 4K_DEV
+        	bool "Develop 4K ISP"
+			depends on DDR_128M
+			depends on LOADMP
+			help
+			  Enable the 128 MiB DDR layout for 4K ISP development on VP.
+			  LOADAP is optional: enable it for AP-controlled streaming,
+			  or use the standalone VP ISP -> encoder -> UVC example.
+			  The standalone path requires SUPPORT_UVC_TUNING_FOR_VP
+			  (which selects VP_MEDIA_EXAMPLE) and USBD_UVC in the VP
+			  configuration. Start it with the VP console command
+			  "video run"; selecting 4K_DEV alone does not auto-start video.
+			  AP DDR regions remain reserved even when LOADAP is disabled.
+		config 4K_ENA
+			bool "Enable 4K ISP"
+			depends on DDR_256M
+			depends on LOADMP
+	endchoice
+endmenu
+
+comment "-----end of MENUCONFIG FOR General-----"
+
+
+menu "MENUCONFIG FOR FP CONFIG"
+    orsource "project_fp/Kconfig"
+endmenu
+
+
+menu "MENUCONFIG FOR NP CONFIG"
+    orsource "project_np/Kconfig"
+endmenu
+
+menu "MENUCONFIG FOR VP CONFIG"
+    orsource "project_vp/Kconfig"
+endmenu
+
+menu "MENUCONFIG FOR AP CONFIG"
+    orsource "project_ap/Kconfig"
+endmenu
+
+
+comment "----- DO NOT ENTER IN THIS BUTTON ------"
+menu "MENUCONFIG FOR Private"
+config WHC_HOST
+    bool "--DO NOT CHOOSE THIS CONFIG--"
+config WHC_DEV
+    bool "--DO NOT CHOOSE THIS CONFIG--"
+config WHC_NONE
+    bool "--DO NOT CHOOSE THIS CONFIG--"
+endmenu

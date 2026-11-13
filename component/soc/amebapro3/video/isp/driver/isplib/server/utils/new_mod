@@ -1,0 +1,42 @@
+#!/bin/sh
+
+if [[ $# -ne 1 ]]; then
+    echo "Usage: new_mod mod_name"
+    exit 1
+fi
+
+script_dir=$(dirname "$0")
+mod_name=$1
+if [[ ! -z $(echo ${mod_name} | sed "s/[a-z][a-z0-9]*//g") ]]; then
+    echo "mod name format error"
+    exit 2
+fi
+mod_name_upper=$(echo ${mod_name} | tr 'a-z' 'A-Z')
+
+function copy_mod_file() {
+    if [[ $# -ne 3 ]]; then
+        echo "func params error"
+        return
+    fi
+    src=$1
+    dest=$2
+    name=$3
+    upper=$(echo $name | tr 'a-z' 'A-Z')
+    cp ${src} ${dest}
+    perl -pi -e "s/sample/${name}/g" $dest
+    perl -pi -e "s/SAMPLE/${upper}/g" $dest
+}
+
+copy_mod_file ${script_dir}/mod_sample/isp_mod_sample.c \
+              ${script_dir}/../modules/isp_mod_${mod_name}.c \
+              ${mod_name}
+copy_mod_file ${script_dir}/mod_sample/isp_mod_sample.h \
+              ${script_dir}/../modules/isp_mod_${mod_name}.h \
+              ${mod_name}
+copy_mod_file ${script_dir}/mod_sample/isp_hw_sample.c \
+              ${script_dir}/../hardware/isp_hw_${mod_name}.c \
+              ${mod_name}
+copy_mod_file ${script_dir}/mod_sample/isp_hw_sample.h \
+              ${script_dir}/../hardware/isp_hw_${mod_name}.h \
+              ${mod_name}
+

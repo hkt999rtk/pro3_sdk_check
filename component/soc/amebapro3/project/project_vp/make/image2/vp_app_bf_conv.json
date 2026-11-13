@@ -1,0 +1,7 @@
+{
+	"sections": [".psram.text", ".psram.rodata", ".psram.bkup.data"],
+	"entry": "vp_loading_start",
+	"align_size": 128,
+	"boot_idx": "0x01010111"
+}
+ 

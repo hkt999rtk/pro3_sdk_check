@@ -1,0 +1,8 @@
+.qp_dependencies/
+.venv-*/
+hevc_qp_backend/build/
+__pycache__/
+recordings/
+*.mp4
+*.analysis.html
+*_params.expected.json

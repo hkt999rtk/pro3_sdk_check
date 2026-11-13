@@ -1,0 +1,16 @@
+set(ispserverdir ${CMAKE_CURRENT_SOURCE_DIR})
+
+set(target isp_server_interface)
+add_library(${target} INTERFACE)
+target_include_directories(${target} INTERFACE common)
+target_include_directories(${target} INTERFACE oslayer)
+target_include_directories(${target} INTERFACE proto)
+target_include_directories(${target} INTERFACE proto/nanopb)
+
+add_subdirectory(api)
+add_subdirectory(core)
+add_subdirectory(proto)
+add_subdirectory(common)
+add_subdirectory(oslayer)
+add_subdirectory(modules)
+add_subdirectory(hardware)

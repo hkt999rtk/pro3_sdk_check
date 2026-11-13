@@ -1,0 +1,7 @@
+{
+	"sections": [".psram.text", ".psram.rodata", ".psram.data"],
+	"entry": "__psram_load_addr__",
+	"align_size": 128,
+	"boot_idx": "0x03030313"
+}
+ 

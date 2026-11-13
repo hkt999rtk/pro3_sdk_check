@@ -1,0 +1,146 @@
+
+//tool_version:1.4.35
+
+#ifndef _YUV_STATS_H_INC_
+#define _YUV_STATS_H_INC_
+
+#include <isp_reg.h>
+#include <isp_reg_base.h>
+
+#define YUV_STATS_CTRL (YUV_STATS_BASE_ADDR + 0x00000000) //0x0001e000
+#define YUV_STATS_WIN_START (YUV_STATS_BASE_ADDR + 0x00000004) //0x0001e004
+#define YUV_STATS_WIN_SIZE (YUV_STATS_BASE_ADDR + 0x00000008) //0x0001e008
+#define YUV_STATS_WIN_CAL_NUM (YUV_STATS_BASE_ADDR + 0x0000000c) //0x0001e00c
+#define YUV_STATS_HWIN_START (YUV_STATS_BASE_ADDR + 0x00000010) //0x0001e010
+#define YUV_STATS_HWIN_END (YUV_STATS_BASE_ADDR + 0x00000014) //0x0001e014
+#define YUV_STATS_YWIN_START (YUV_STATS_BASE_ADDR + 0x00000018) //0x0001e018
+#define YUV_STATS_YWIN_END (YUV_STATS_BASE_ADDR + 0x0000001c) //0x0001e01c
+#define YUV_STATS_YSUM (YUV_STATS_BASE_ADDR + 0x00000020) //0x0001e020
+#define YUV_STATS_WIN_MEM_BASE (YUV_STATS_BASE_ADDR + 0x00000100) //0x0001e100
+#define YUV_STATS_WIN_MEM_TOP (YUV_STATS_BASE_ADDR + 0x000004fc) //0x0001e4fc
+#define YUV_STATS_HISTO_MEM_BASE (YUV_STATS_BASE_ADDR + 0x00000500) //0x0001e500
+#define YUV_STATS_HISTO_MEM_TOP (YUV_STATS_BASE_ADDR + 0x000008fc) //0x0001e8fc
+
+/* Bits of YUV_STATS_CTRL (0x00000000) */
+
+#define YUV_STATS_MODE_OFFSET 0
+#define YUV_STATS_MODE_BITS 2
+#define YUV_STATS_MODE_MASK (((1 << 2) - 1) << 0)
+
+#define YUV_STATS_DLY_OFFSET 2
+#define YUV_STATS_DLY_BITS 2
+#define YUV_STATS_DLY_MASK (((1 << 2) - 1) << 2)
+
+#define WIN_STATS_MODE_OFFSET 4
+#define WIN_STATS_MODE_BITS 1
+#define WIN_STATS_MODE_MASK (((1 << 1) - 1) << 4)
+
+#define YUV_STATS_GOING_OFFSET 5
+#define YUV_STATS_GOING_BITS 1
+#define YUV_STATS_GOING_MASK (((1 << 1) - 1) << 5)
+
+#define YUV_STATS_STOP_OFFSET 6
+#define YUV_STATS_STOP_BITS 1
+#define YUV_STATS_STOP_MASK (((1 << 1) - 1) << 6)
+
+#define YUV_STATS_START_OFFSET 7
+#define YUV_STATS_START_BITS 1
+#define YUV_STATS_START_MASK (((1 << 1) - 1) << 7)
+
+#define YUV_YSUM_EN_OFFSET 8
+#define YUV_YSUM_EN_BITS 1
+#define YUV_YSUM_EN_MASK (((1 << 1) - 1) << 8)
+
+/* Bits of YUV_STATS_WIN_START (0x00000004) */
+
+#define YUV_STATS_START_X_OFFSET 0
+#define YUV_STATS_START_X_BITS 16
+#define YUV_STATS_START_X_MASK (((1 << 16) - 1) << 0)
+
+#define YUV_STATS_START_Y_OFFSET 16
+#define YUV_STATS_START_Y_BITS 16
+#define YUV_STATS_START_Y_MASK (((1 << 16) - 1) << 16)
+
+/* Bits of YUV_STATS_WIN_SIZE (0x00000008) */
+
+#define WIN_WIDTH_OFFSET 0
+#define WIN_WIDTH_BITS 8
+#define WIN_WIDTH_MASK (((1 << 8) - 1) << 0)
+
+#define WIN_HEIGHT_OFFSET 8
+#define WIN_HEIGHT_BITS 8
+#define WIN_HEIGHT_MASK (((1 << 8) - 1) << 8)
+
+#define WIN_NUM_H_OFFSET 16
+#define WIN_NUM_H_BITS 5
+#define WIN_NUM_H_MASK (((1 << 5) - 1) << 16)
+
+#define WIN_NUM_V_OFFSET 24
+#define WIN_NUM_V_BITS 5
+#define WIN_NUM_V_MASK (((1 << 5) - 1) << 24)
+
+/* Bits of YUV_STATS_WIN_CAL_NUM (0x0000000c) */
+
+#define WIN_CAL_NUM_OFFSET 0
+#define WIN_CAL_NUM_BITS 16
+#define WIN_CAL_NUM_MASK (((1 << 16) - 1) << 0)
+
+/* Bits of YUV_STATS_HWIN_START (0x00000010) */
+
+#define YUV_STATS_YST_X_OFFSET 0
+#define YUV_STATS_YST_X_BITS 16
+#define YUV_STATS_YST_X_MASK (((1 << 16) - 1) << 0)
+
+#define YUV_STATS_YST_Y_OFFSET 16
+#define YUV_STATS_YST_Y_BITS 16
+#define YUV_STATS_YST_Y_MASK (((1 << 16) - 1) << 16)
+
+/* Bits of YUV_STATS_HWIN_END (0x00000014) */
+
+#define YUV_STATS_END_X_OFFSET 0
+#define YUV_STATS_END_X_BITS 16
+#define YUV_STATS_END_X_MASK (((1 << 16) - 1) << 0)
+
+#define YUV_STATS_END_Y_OFFSET 16
+#define YUV_STATS_END_Y_BITS 16
+#define YUV_STATS_END_Y_MASK (((1 << 16) - 1) << 16)
+
+/* Bits of YUV_STATS_YWIN_START (0x00000018) */
+
+#define YSTA_X_OFFSET 0
+#define YSTA_X_BITS 16
+#define YSTA_X_MASK (((1 << 16) - 1) << 0)
+
+#define YSTA_Y_OFFSET 16
+#define YSTA_Y_BITS 16
+#define YSTA_Y_MASK (((1 << 16) - 1) << 16)
+
+/* Bits of YUV_STATS_YWIN_END (0x0000001c) */
+
+#define YEND_X_OFFSET 0
+#define YEND_X_BITS 16
+#define YEND_X_MASK (((1 << 16) - 1) << 0)
+
+#define YEND_Y_OFFSET 16
+#define YEND_Y_BITS 16
+#define YEND_Y_MASK (((1 << 16) - 1) << 16)
+
+/* Bits of YUV_STATS_YSUM (0x00000020) */
+
+#define YSUM_OFFSET 0
+#define YSUM_BITS 30
+#define YSUM_MASK (((1 << 30) - 1) << 0)
+
+/* Bits of YUV_STATS_WIN_MEM (0x00000100~0x000004fc) */
+
+#define YUV_STATS_WIN_OFFSET 0
+#define YUV_STATS_WIN_BITS 24
+#define YUV_STATS_WIN_MASK (((1 << 24) - 1) << 0)
+
+/* Bits of YUV_STATS_HISTO_MEM (0x00000500~0x000008fc) */
+
+#define YUV_STATS_HISTO_OFFSET 0
+#define YUV_STATS_HISTO_BITS 20
+#define YUV_STATS_HISTO_MASK (((1 << 20) - 1) << 0)
+
+#endif /* _YUV_STATS_H_INC_ */

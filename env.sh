@@ -1,0 +1,311 @@
+PREBUILTS_VERSION=1.0.3
+PREBUILTS_WIN_URL='https://github.com/Ameba-AIoT/ameba-toolchain/releases/download/prebuilts-v1.0.3/prebuilts-win-1.0.3.zip'
+PREBUILTS_LINUX_URL='https://github.com/Ameba-AIoT/ameba-toolchain/releases/download/prebuilts-v1.0.3/prebuilts-linux-1.0.3.tar.gz'
+PREBUILTS_DARWIN_URL='https://github.com/Ameba-AIoT/ameba-toolchain/releases/download/prebuilts-v1.0.3/prebuilts-darwin-1.0.3.tar.gz'
+PREBUILTS_WIN_URL_ALIYUN='https://aiot.realmcu.com/download/prebuilts/prebuilts-win-1.0.3.zip'
+PREBUILTS_LINUX_URL_ALIYUN='https://aiot.realmcu.com/download/prebuilts/prebuilts-linux-1.0.3.tar.gz'
+PREBUILTS_DARWIN_URL_ALIYUN='https://aiot.realmcu.com/download/prebuilts/prebuilts-darwin-1.0.3.tar.gz'
+
+case $(uname) in
+    Linux)  RTK_TOOLCHAIN_DIR_LINUX="$HOME/rtk-toolchain" ;;
+    Darwin) RTK_TOOLCHAIN_DIR_DARWIN="$HOME/rtk-toolchain" ;;
+    *_NT*)  RTK_TOOLCHAIN_DIR_NT=/c/rtk-toolchain ;;
+esac
+
+function get_script_dir
+{
+    if [ "$(uname)" = "Darwin" ]; then
+        SCRIPT_NAME="$(realpath "${SELF_PATH}")"
+    else
+        SCRIPT_NAME="$(readlink -f "${SELF_PATH}")"
+    fi
+    SCRIPT_DIR="$(dirname "${SCRIPT_NAME}")"
+
+    if [ "$SCRIPT_DIR" = '.' ]
+    then
+       SCRIPT_DIR="$(pwd)"
+    fi
+    echo "$SCRIPT_DIR"
+}
+
+if [ -n "${BASH_SOURCE-}" ]
+then
+    SELF_PATH="${BASH_SOURCE}"
+elif [ -n "${ZSH_VERSION-}" ]
+then
+    SELF_PATH="${(%):-%x}"
+fi
+
+BASE_DIR="$(get_script_dir)"
+
+case `uname` in
+Linux)
+
+    if [ -n "$RTK_TOOLCHAIN_DIR" ]; then
+        RTK_TOOLCHAIN_DIR="$RTK_TOOLCHAIN_DIR"
+        if [[ "${RTK_TOOLCHAIN_DIR:0:1}" == "~" ]]; then
+            RTK_TOOLCHAIN_DIR="$HOME${RTK_TOOLCHAIN_DIR:1}"
+        fi
+    else
+        RTK_TOOLCHAIN_DIR=$RTK_TOOLCHAIN_DIR_LINUX
+    fi
+
+    export AMEBA_SDK="$BASE_DIR"
+
+	VENV_CMD="python -m venv $BASE_DIR/.venv"
+    ACTIVE_CMD="source $BASE_DIR/.venv/bin/activate"
+    PREBUILTS_DIR=$RTK_TOOLCHAIN_DIR/prebuilts-linux-$PREBUILTS_VERSION
+    PREBUILTS_ZIP_FILE=$PREBUILTS_DIR.tar.gz
+    DOWNLOAD_URL=$PREBUILTS_LINUX_URL_ALIYUN
+    DOWNLOAD_URL_SECOND_SOURCE=$PREBUILTS_LINUX_URL
+    alias menuconfig.py='python menuconfig.py'
+	alias build.py='python build.py'
+	alias flash.py='python flash.py'
+	alias monitor.py='python monitor.py'
+    alias ameba.py='python $BASE_DIR/ameba.py'
+    ;;
+Darwin)
+
+    if [ -n "$RTK_TOOLCHAIN_DIR" ]; then
+        RTK_TOOLCHAIN_DIR="$RTK_TOOLCHAIN_DIR"
+        if [[ "${RTK_TOOLCHAIN_DIR:0:1}" == "~" ]]; then
+            RTK_TOOLCHAIN_DIR="$HOME${RTK_TOOLCHAIN_DIR:1}"
+        fi
+    else
+        RTK_TOOLCHAIN_DIR=$RTK_TOOLCHAIN_DIR_DARWIN
+    fi
+
+    export AMEBA_SDK="$BASE_DIR"
+
+	VENV_CMD="python3 -m venv $BASE_DIR/.venv"
+    ACTIVE_CMD="source $BASE_DIR/.venv/bin/activate"
+    PREBUILTS_DIR=$RTK_TOOLCHAIN_DIR/prebuilts-darwin-$PREBUILTS_VERSION
+    PREBUILTS_ZIP_FILE=$PREBUILTS_DIR.tar.gz
+    DOWNLOAD_URL=$PREBUILTS_DARWIN_URL_ALIYUN
+    DOWNLOAD_URL_SECOND_SOURCE=$PREBUILTS_DARWIN_URL
+    alias menuconfig.py='python menuconfig.py'
+	alias build.py='python build.py'
+	alias flash.py='python flash.py'
+	alias monitor.py='python monitor.py'
+    alias ameba.py='python $BASE_DIR/ameba.py'
+    ;;
+*_NT*)
+
+    if [ -n "$RTK_TOOLCHAIN_DIR" ]; then
+        RTK_TOOLCHAIN_DIR=$(cygpath -u "$RTK_TOOLCHAIN_DIR")
+    else
+        RTK_TOOLCHAIN_DIR=$RTK_TOOLCHAIN_DIR_NT
+    fi
+
+    WIN_SDK_PATH=$(cygpath -w "$BASE_DIR")
+    export AMEBA_SDK="$WIN_SDK_PATH"
+
+	VENV_CMD="python -m virtualenv $BASE_DIR/.venv"
+    ACTIVE_CMD="source $BASE_DIR/.venv/Scripts/activate"
+    PREBUILTS_DIR=$RTK_TOOLCHAIN_DIR/prebuilts-win-$PREBUILTS_VERSION
+    PREBUILTS_ZIP_FILE=$PREBUILTS_DIR.zip
+    DOWNLOAD_URL=$PREBUILTS_WIN_URL_ALIYUN
+    DOWNLOAD_URL_SECOND_SOURCE=$PREBUILTS_WIN_URL
+
+    alias menuconfig.py='winpty python menuconfig.py'
+	alias build.py='winpty python build.py'
+	alias flash.py='winpty python flash.py'
+	alias monitor.py='winpty python monitor.py'
+    alias ameba.py='winpty python $BASE_DIR/ameba.py'
+    ;;
+esac
+
+# support press tab to auto complete cmd
+_ameba_py_completion() {
+    local cur suggestions
+    cur="${COMP_WORDS[COMP_CWORD]}"
+
+    suggestions=$(env \
+        AMEBAPY_COMPLETE=1 \
+        COMP_WORDS="${COMP_WORDS[*]}" \
+        COMP_CWORD="$COMP_CWORD" \
+        python $BASE_DIR/ameba.py
+    )
+    COMPREPLY=($(compgen -W "${suggestions}" -- "${cur}"))
+    return 0
+}
+
+complete -F _ameba_py_completion ameba.py
+
+
+function download_update_prebuilts
+{
+    case $(uname) in
+        Linux)   local pattern='prebuilts-linux*'  ;;
+        Darwin)  local pattern='prebuilts-darwin*' ;;
+        *_NT*)   local pattern='prebuilts-win*'    ;;
+    esac
+    mkdir -p "$RTK_TOOLCHAIN_DIR"
+    local last_matched_folder=$(find "$RTK_TOOLCHAIN_DIR" -type d -name "$pattern" 2>/dev/null | sort | tail -n 1)
+
+    if [[ -n "$last_matched_folder" ]]; then
+        if [[ "$last_matched_folder" != "$PREBUILTS_DIR" ]]; then
+            echo "$last_matched_folder is out of date, updating prebuilts..."
+        else
+            echo "$last_matched_folder is incomplete, reinstalling..."
+        fi
+        rm -rf "$last_matched_folder"
+    else
+        echo "RTK software suite not found, downloading for first-time setup..."
+    fi
+
+    if [ -f "$PREBUILTS_ZIP_FILE" ]; then
+        case $(uname) in
+            Linux|Darwin)  tar -tf "$PREBUILTS_ZIP_FILE" >/dev/null 2>&1 ;;
+            *_NT*)  unzip -t "$PREBUILTS_ZIP_FILE" >/dev/null 2>&1 ;;
+        esac
+        if [ $? -ne 0 ]; then
+            echo "Incomplete download detected, re-downloading..."
+            rm -f "$PREBUILTS_ZIP_FILE"
+        fi
+    fi
+    if [ ! -f "$PREBUILTS_ZIP_FILE" ]; then
+        echo "download.... "
+
+        # Set USE_SECOND_SOURCE=True to skip the primary mirror and download
+        # directly from the second source (e.g. GitHub Releases).
+        if [ "${USE_SECOND_SOURCE}" = "True" ]; then
+            echo "USE_SECOND_SOURCE=True, downloading from $DOWNLOAD_URL_SECOND_SOURCE"
+            curl -fL# -o "$PREBUILTS_ZIP_FILE" "$DOWNLOAD_URL_SECOND_SOURCE"
+        else
+            curl -fL# -o "$PREBUILTS_ZIP_FILE" "$DOWNLOAD_URL"
+            if [ $? -ne 0 ]; then
+                rm -f "$PREBUILTS_ZIP_FILE"
+                echo "Try to download from $DOWNLOAD_URL_SECOND_SOURCE"
+                curl -fL# -o "$PREBUILTS_ZIP_FILE" "$DOWNLOAD_URL_SECOND_SOURCE"
+            fi
+        fi
+
+        if [ $? -ne 0 ]; then
+            rm -f "$PREBUILTS_ZIP_FILE"
+            echo "Download failed. Please check your network, or download manually from:"
+            echo "  $DOWNLOAD_URL"
+            echo "  $DOWNLOAD_URL_SECOND_SOURCE"
+            return 1
+        fi
+    fi
+
+    rm -rf "$PREBUILTS_DIR"
+    echo "unzip ... "
+    case $(uname) in
+        Linux|Darwin)
+            tar -xf "$PREBUILTS_ZIP_FILE" -C "$RTK_TOOLCHAIN_DIR"
+            ;;
+        *_NT*)
+            unzip -q -o "$PREBUILTS_ZIP_FILE" -d "$RTK_TOOLCHAIN_DIR"
+            ;;
+    esac
+
+    if [ $? -ne 0 ]; then
+        rm -rf "$PREBUILTS_DIR"
+        echo "Unzip failed. Please unzip $PREBUILTS_ZIP_FILE manually to $RTK_TOOLCHAIN_DIR"
+        return 1
+    fi
+
+    source "$PREBUILTS_DIR/setenv.sh"
+    return 0
+}
+
+
+if [ -f "$PREBUILTS_DIR/setenv.sh" ]; then
+    source $PREBUILTS_DIR/setenv.sh
+else
+
+	rm -rf $BASE_DIR/.venv
+    download_update_prebuilts
+    if [ $? -ne 0 ]; then
+        return
+    fi
+
+fi
+
+
+EXPECTED_VENV_PATH="$BASE_DIR/.venv"
+if [ -z "$VIRTUAL_ENV" ] || [ "$VIRTUAL_ENV" != "$EXPECTED_VENV_PATH" ]; then
+    if [ -d "$EXPECTED_VENV_PATH" ]; then
+        eval $ACTIVE_CMD
+    else
+        echo "python virtual environment is not detected, it will be installed automatically..."
+        eval $VENV_CMD
+        eval $ACTIVE_CMD
+        pip install -r $BASE_DIR/tools/requirements.txt
+        echo "These python modules are installed:"
+        pip list
+    fi
+fi
+
+# Install ameba-mcp launcher into the venv (idempotent).
+# Re-runs only when the launcher is missing or pyproject.toml has changed —
+# keeps `claude mcp add ameba-dev -- <SDK>/tools/ameba/ameba_dev_mcp/launcher.sh` working
+# without forcing the user to manage PYTHONPATH.
+_AMEBA_MCP_PYPROJECT="$BASE_DIR/tools/ameba/pyproject.toml"
+_AMEBA_MCP_BIN="$BASE_DIR/.venv/bin/ameba-mcp"
+[ -x "$_AMEBA_MCP_BIN" ] || _AMEBA_MCP_BIN="$BASE_DIR/.venv/Scripts/ameba-mcp.exe"
+if [ ! -x "$_AMEBA_MCP_BIN" ] || [ "$_AMEBA_MCP_PYPROJECT" -nt "$_AMEBA_MCP_BIN" ]; then
+    pip install -e "$BASE_DIR/tools/ameba" >/dev/null 2>&1 \
+        || echo "[WARNING] Failed to install ameba-mcp; run 'pip install -e tools/ameba' manually."
+fi
+unset _AMEBA_MCP_PYPROJECT _AMEBA_MCP_BIN
+
+python $BASE_DIR/tools/scripts/check_requirements.py
+
+if [ "$(uname)" = "Linux" ] || [ "$(uname)" = "Darwin" ]; then
+    # macOS doesn't have nproc; use sysctl as fallback
+    NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+
+    # 1. Build list of directories to scan
+    SCAN_DIRS=()
+    # Add ./tools directory if it exists
+    [ -d "./tools" ] && SCAN_DIRS+=("./tools")
+    # Example: Add a new directory if needed in future
+    # SCAN_DIRS+=("./new_directory")
+
+    # 2. Define file patterns to process (can be expanded)
+    FILE_PATTERNS=("*.sh")
+
+    # 3. Find scripts and batch set execute permission (fast)
+    # Limit search to max 4 levels, process in parallel based on CPU cores
+    # Note: avoid xargs -I{} on macOS — BSD xargs limits constructed args to 255 chars.
+    # Also avoid -r (GNU-only flag not available on macOS BSD xargs).
+    for base in "${SCAN_DIRS[@]}"; do
+        for pattern in "${FILE_PATTERNS[@]}"; do
+            find "$base" -maxdepth 5 -type f -name "$pattern" -print0
+        done
+    done \
+    | xargs -0 chmod +x 2>/dev/null || true
+
+    # 4. Fix execute permission for binaries without extensions under PREBUILTS_DIR
+    if [ -d "$PREBUILTS_DIR" ]; then
+        find "$PREBUILTS_DIR" -type f ! -name "*.*" -print0 \
+        | xargs -0 -P "$NPROC" sh -c '
+            for f; do
+                file "$f" 2>/dev/null | grep -q "executable" || continue
+                [ ! -x "$f" ] || continue
+                chmod +x "$f" 2>/dev/null || \
+                    echo "[WARNING] Failed to add execute permission to binary: $f. Please check permissions or ownership." >&2
+            done' _
+    else
+        echo "[WARNING] PREBUILTS_DIR not found: $PREBUILTS_DIR" >&2
+    fi
+fi
+
+info1="Setup complete. The Ameba SDK is now ready for use."
+info2="Go to the project root directory and run ameba.py"
+info3="Usage:      ameba.py [COMMAND] [ARGS]"
+info4="Build:      ameba.py build"
+info5="Select SoC: ameba.py soc"
+info6="Help:       ameba.py help"
+
+echo "================================================================================"
+echo "|  $info1"
+echo "|  $info2"
+echo "|  $info3"
+echo "|  $info4"
+echo "|  $info5"
+echo "|  $info6"
+echo "================================================================================"

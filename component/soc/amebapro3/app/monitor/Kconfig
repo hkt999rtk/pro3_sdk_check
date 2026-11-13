@@ -1,0 +1,16 @@
+menu "MONITOR OPTIONS"
+    config MONITOR_CMD_FOR_VP
+		bool "Monitor command for VP"
+		default y
+	config MONITOR_CMD_FOR_AP
+		bool "Extend Monitor command for AP"
+		default y
+	config SHELL_IPC
+		bool "MultiCPU shell by IPC"
+		default y
+	config CMD_MASTER_IS_AP
+		bool "Switch command master to AP"
+		depends on LOADAP
+		default y if WHC_INTF_IPC_MENU
+endmenu
+

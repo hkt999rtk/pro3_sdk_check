@@ -1,0 +1,34 @@
+/*
+ * Copyright (c) 2024 Realtek Semiconductor Corp.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#ifndef EXAMPLE_USBD_HID_H
+#define EXAMPLE_USBD_HID_H
+
+/* Includes ------------------------------------------------------------------*/
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Exported defines ----------------------------------------------------------*/
+
+/* Exported types ------------------------------------------------------------*/
+
+/* Exported macros -----------------------------------------------------------*/
+
+/* Exported variables --------------------------------------------------------*/
+
+/* Exported functions --------------------------------------------------------*/
+
+void example_usbd_hid(void);
+int example_usbd_hid_start(void);
+int example_usbd_hid_stop(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* EXAMPLE_USBD_HID_H */

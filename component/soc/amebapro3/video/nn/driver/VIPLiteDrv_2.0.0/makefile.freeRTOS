@@ -1,0 +1,82 @@
+
+#/******************************************************************************\
+#|* Copyright (c) 2017-2020 by Vivante Corporation.  All Rights Reserved.      *|
+#|*                                                                            *|
+#|* The material in this file is confidential and contains trade secrets of    *|
+#|* of Vivante Corporation.  This is proprietary information owned by Vivante  *|
+#|* Corporation.  No part of this work may be disclosed, reproduced, copied,   *|
+#|* transmitted, or used in any way for any purpose, without the express       *|
+#|* written permission of Vivante Corporation.                                 *|
+#|*                                                                            *|
+#\******************************************************************************/
+
+
+VIPLITE_ROOT=drivers/VIPLiteDrv/
+
+VPATH += ${VIPLITE_ROOT}/nbg_linker: \
+         ${VIPLITE_ROOT}/vip_drv/src: \
+         ${VIPLITE_ROOT}/vip_drv/src/task: \
+         ${VIPLITE_ROOT}/vip_drv/src/memory: \
+         ${VIPLITE_ROOT}/vip_drv/src/os/freeRTOS: \
+         ${VIPLITE_ROOT}/vip_hal/src: \
+         ${VIPLITE_ROOT}/vip_hal/src/os/freeRTOS
+
+CFLAGS += -I ${VIPLITE_ROOT}/nbg_linker/inc \
+          -I ${VIPLITE_ROOT}/vip_drv/inc \
+          -I ${VIPLITE_ROOT}/vip_drv/src \
+          -I ${VIPLITE_ROOT}/vip_drv/src/task \
+          -I ${VIPLITE_ROOT}/vip_drv/src/memory \
+          -I ${VIPLITE_ROOT}/vip_hal/src \
+          -I ${VIPLITE_ROOT}/vip_hal/inc \
+          -I ${VIPLITE_ROOT}/include \
+          -I ${VIPLITE_ROOT}/include/nbg_linker \
+          -I ${VIPLITE_ROOT}/common \
+          -I ${VIPLITE_ROOT}/vip_drv/src/os/freeRTOS \
+          -I ${VIPLITE_ROOT}/vip_hal/src/os/freeRTOS
+
+
+CFLAGS += -Wno-unused-function -Wno-unused-parameter
+
+OBJS += ${COMPILER}/nbg_lk_cpu.o \
+        ${COMPILER}/nbg_lk_user_cpu.o \
+        ${COMPILER}/nbg_fmt_util.o \
+        ${COMPILER}/nbg_fmt_v1.o \
+        ${COMPILER}/nbg_fmt_v2.o \
+        ${COMPILER}/nbg_lk_relocate.o \
+        ${COMPILER}/nbg_lk.o \
+        ${COMPILER}/nbg_lk_buffer.o \
+        ${COMPILER}/nbg_lk_coeff.o \
+        ${COMPILER}/nbg_lk_debug.o \
+        ${COMPILER}/nbg_lk_network.o \
+        ${COMPILER}/nbg_lk_group.o \
+        ${COMPILER}/nbg_lk_util.o \
+        ${COMPILER}/nbg_lk_context.o \
+        ${COMPILER}/nbg_lk_capture.o \
+        ${COMPILER}/nbg_lk_npd.o \
+        ${COMPILER}/vip_hal_hardware.o \
+        ${COMPILER}/vip_drv_interface.o \
+        ${COMPILER}/vip_drv_util.o \
+        ${COMPILER}/vip_drv_pm.o \
+        ${COMPILER}/vip_drv_video_memory.o \
+        ${COMPILER}/vip_drv_task_descriptor.o \
+        ${COMPILER}/vip_drv_task_schedule.o \
+        $(COMPILER)/vip_drv_task_parallel_async.o \
+        $(COMPILER)/vip_drv_task_serial_sync.o \
+        $(COMPILER)/vip_drv_task_parallel_sync.o \
+        $(COMPILER)/vip_drv_task_single.o \
+        $(COMPILER)/vip_drv_task_common.o \
+        $(COMPILER)/vip_drv_task_debug.o \
+        ${COMPILER}/vip_drv_mmu.o \
+        ${COMPILER}/vip_drv_mem_heap.o \
+        ${COMPILER}/vip_drv_debug.o \
+        ${COMPILER}/vip_drv_os.o \
+        ${COMPILER}/vip_drv_device_driver.o \
+        ${COMPILER}/vip_drv_mem_allocator.o \
+        ${COMPILER}/vip_drv_mem_allocator_heap.o \
+        ${COMPILER}/vip_drv_mem_allocator_continue.o \
+        ${COMPILER}/vip_drv_mem_allocator_wrap_memory.o \
+        ${COMPILER}/vip_drv_mem_allocator_wrap_physical.o \
+        ${COMPILER}/vip_hal.o \
+        ${COMPILER}/vip_hal_hardware.o \
+        ${COMPILER}/vip_hal_heap.o \
+        ${COMPILER}/vip_hal_os.o 

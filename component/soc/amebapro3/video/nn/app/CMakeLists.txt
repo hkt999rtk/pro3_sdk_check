@@ -1,0 +1,6 @@
+
+ameba_add_subdirectory(img_process)
+ameba_add_subdirectory(nn_utils)
+ameba_add_subdirectory(nn_model)
+ameba_add_subdirectory(nn_sys_api)
+ameba_add_subdirectory(nn_file_system)

@@ -1,0 +1,7 @@
+{
+	"sections": [".ssram.dummy", ".ssram.vector", ".ssram.text", ".ssram.rodata", ".ssram.data", ".preinit_array", ".init_array", ".fini_array", ".ARM.extab", ".ARM.exidx"],
+	"entry": "fp_loading_start",
+	"align_size": 128,
+	"boot_idx": "0x02020202"
+}
+ 

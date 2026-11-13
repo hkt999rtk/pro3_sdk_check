@@ -1,0 +1,36 @@
+{
+  "ChipName": "RTL8721F",
+  "DisplayName": "RTL8721F",
+  "CapChannels": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+  ],
+  "ClockSources": ["OSC", "XTAL"],
+  "XTALDividers": [
+      {"Name": "1 us", "Val": 1},
+      {"Name": "2 us", "Val": 2},
+      {"Name": "4 us", "Val": 4},
+      {"Name": "8 us", "Val": 8},
+      {"Name": "16 us", "Val": 16},
+      {"Name": "32 us", "Val": 32},
+      {"Name": "64 us", "Val": 64},
+      {"Name": "128 us", "Val": 128}
+  ],
+  "FilterEnable": 1,
+  "MaxMbias": 65535,
+  "DebugEnable": 1,
+  "Features": {
+    "SamplePeriodSelector": true,
+    "SingleIIRCoef": true,
+    "MedianWindowFilter": true,
+    "PowerLineFilter": true,
+    "DefaultScanInterval": 10
+  }
+}

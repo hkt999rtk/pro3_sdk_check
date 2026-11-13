@@ -1,0 +1,185 @@
+
+//tool_version:1.4.35
+
+#ifndef _STATIS_H_INC_
+#define _STATIS_H_INC_
+
+#include <isp_reg.h>
+#include <isp_reg_base.h>
+
+#define DMA_CTRL0 (STATIS_BASE_ADDR + 0x00000000) //0x00006c00
+#define DMA_CTRL1 (STATIS_BASE_ADDR + 0x00000004) //0x00006c04
+#define DMA_CTRL2 (STATIS_BASE_ADDR + 0x00000008) //0x00006c08
+#define DMA_DDR_ADDR (STATIS_BASE_ADDR + 0x0000000c) //0x00006c0c
+#define DMA_DDR_LEN (STATIS_BASE_ADDR + 0x00000010) //0x00006c10
+#define DMA_BUFF_SIZE (STATIS_BASE_ADDR + 0x00000014) //0x00006c14
+#define DMA_PIX_CNT (STATIS_BASE_ADDR + 0x00000018) //0x00006c18
+#define DMA_STATS (STATIS_BASE_ADDR + 0x0000001c) //0x00006c1c
+#define DMA_STATS_EN (STATIS_BASE_ADDR + 0x00000020) //0x00006c20
+#define DMA_STATE (STATIS_BASE_ADDR + 0x00000024) //0x00006c24
+#define DMA_AXI_STATE (STATIS_BASE_ADDR + 0x00000028) //0x00006c28
+#define DMA_STATS_TRIG (STATIS_BASE_ADDR + 0x00000030) //0x00006c30
+#define DMA_STATS_STATE (STATIS_BASE_ADDR + 0x00000034) //0x00006c34
+#define DMA_FRAME_STATE (STATIS_BASE_ADDR + 0x00000038) //0x00006c38
+
+/* Bits of DMA_CTRL0 (0x00000000) */
+
+#define AEAWBAF_EN_OFFSET 0
+#define AEAWBAF_EN_BITS 1
+#define AEAWBAF_EN_MASK (((1 << 1) - 1) << 0)
+
+#define STREAM_STOP_IN_AEAWBAF_OFFSET 1
+#define STREAM_STOP_IN_AEAWBAF_BITS 1
+#define STREAM_STOP_IN_AEAWBAF_MASK (((1 << 1) - 1) << 1)
+
+/* Bits of DMA_CTRL1 (0x00000004) */
+
+#define AEAWBAF_RST_OFFSET 0
+#define AEAWBAF_RST_BITS 1
+#define AEAWBAF_RST_MASK (((1 << 1) - 1) << 0)
+
+/* Bits of DMA_CTRL2 (0x00000008) */
+
+#define BURST_LENGTH_SEL_AEAWBAF_OFFSET 0
+#define BURST_LENGTH_SEL_AEAWBAF_BITS 1
+#define BURST_LENGTH_SEL_AEAWBAF_MASK (((1 << 1) - 1) << 0)
+
+#define AF1_ADJUST_EN_OFFSET 1
+#define AF1_ADJUST_EN_BITS 1
+#define AF1_ADJUST_EN_MASK (((1 << 1) - 1) << 1)
+
+/* Bits of DMA_DDR_ADDR (0x0000000c) */
+
+#define FRAME_ADDR_AEAWBAF_OFFSET 4
+#define FRAME_ADDR_AEAWBAF_BITS 28
+#define FRAME_ADDR_AEAWBAF_MASK (((1 << 28) - 1) << 4)
+
+/* Bits of DMA_DDR_LEN (0x00000010) */
+
+#define DDR_LEN_AEAWBAF_OFFSET 4
+#define DDR_LEN_AEAWBAF_BITS 20
+#define DDR_LEN_AEAWBAF_MASK (((1 << 20) - 1) << 4)
+
+/* Bits of DMA_BUFF_SIZE (0x00000014) */
+
+#define BUF_SIZE_AEAWBAF_OFFSET 4
+#define BUF_SIZE_AEAWBAF_BITS 12
+#define BUF_SIZE_AEAWBAF_MASK (((1 << 12) - 1) << 4)
+
+#define BUF_START_ADDR_AEAWBAF_OFFSET 20
+#define BUF_START_ADDR_AEAWBAF_BITS 11
+#define BUF_START_ADDR_AEAWBAF_MASK (((1 << 11) - 1) << 20)
+
+/* Bits of DMA_PIX_CNT (0x00000018) */
+
+#define PIX_CNT_AEAWBAF_OFFSET 0
+#define PIX_CNT_AEAWBAF_BITS 20
+#define PIX_CNT_AEAWBAF_MASK (((1 << 20) - 1) << 0)
+
+/* Bits of DMA_STATS (0x0000001c) */
+
+#define DDR_OVERFLOW_CLR_OFFSET 0
+#define DDR_OVERFLOW_CLR_BITS 1
+#define DDR_OVERFLOW_CLR_MASK (((1 << 1) - 1) << 0)
+
+#define BUF_OVERFLOW_CLR_OFFSET 1
+#define BUF_OVERFLOW_CLR_BITS 1
+#define BUF_OVERFLOW_CLR_MASK (((1 << 1) - 1) << 1)
+
+/* Bits of DMA_STATS_EN (0x00000020) */
+
+#define RAW_STATS_EN_OFFSET 0
+#define RAW_STATS_EN_BITS 1
+#define RAW_STATS_EN_MASK (((1 << 1) - 1) << 0)
+
+#define AWB_STATS_EN_OFFSET 1
+#define AWB_STATS_EN_BITS 1
+#define AWB_STATS_EN_MASK (((1 << 1) - 1) << 1)
+
+#define AE_0_STATS_EN_OFFSET 2
+#define AE_0_STATS_EN_BITS 1
+#define AE_0_STATS_EN_MASK (((1 << 1) - 1) << 2)
+
+#define Y_STATS_EN_OFFSET 3
+#define Y_STATS_EN_BITS 1
+#define Y_STATS_EN_MASK (((1 << 1) - 1) << 3)
+
+#define AF0_STATS_EN_OFFSET 4
+#define AF0_STATS_EN_BITS 1
+#define AF0_STATS_EN_MASK (((1 << 1) - 1) << 4)
+
+#define AF1_STATS_EN_OFFSET 5
+#define AF1_STATS_EN_BITS 1
+#define AF1_STATS_EN_MASK (((1 << 1) - 1) << 5)
+
+#define AE_1_STATS_EN_OFFSET 6
+#define AE_1_STATS_EN_BITS 1
+#define AE_1_STATS_EN_MASK (((1 << 1) - 1) << 6)
+
+#define AE_2_STATS_EN_OFFSET 7
+#define AE_2_STATS_EN_BITS 1
+#define AE_2_STATS_EN_MASK (((1 << 1) - 1) << 7)
+
+/* Bits of DMA_STATE (0x00000024) */
+
+#define RAW_CONFLICT_CLR_OFFSET 0
+#define RAW_CONFLICT_CLR_BITS 1
+#define RAW_CONFLICT_CLR_MASK (((1 << 1) - 1) << 0)
+
+#define AWB_CONFLICT_CLR_OFFSET 1
+#define AWB_CONFLICT_CLR_BITS 1
+#define AWB_CONFLICT_CLR_MASK (((1 << 1) - 1) << 1)
+
+#define AE_0_CONFLICT_CLR_OFFSET 2
+#define AE_0_CONFLICT_CLR_BITS 1
+#define AE_0_CONFLICT_CLR_MASK (((1 << 1) - 1) << 2)
+
+#define Y_CONFLICT_CLR_OFFSET 3
+#define Y_CONFLICT_CLR_BITS 1
+#define Y_CONFLICT_CLR_MASK (((1 << 1) - 1) << 3)
+
+#define AF0_CONFLICT_CLR_OFFSET 4
+#define AF0_CONFLICT_CLR_BITS 1
+#define AF0_CONFLICT_CLR_MASK (((1 << 1) - 1) << 4)
+
+#define AF1_CONFLICT_CLR_OFFSET 5
+#define AF1_CONFLICT_CLR_BITS 1
+#define AF1_CONFLICT_CLR_MASK (((1 << 1) - 1) << 5)
+
+#define AE_1_CONFLICT_CLR_OFFSET 6
+#define AE_1_CONFLICT_CLR_BITS 1
+#define AE_1_CONFLICT_CLR_MASK (((1 << 1) - 1) << 6)
+
+#define AE_2_CONFLICT_CLR_OFFSET 7
+#define AE_2_CONFLICT_CLR_BITS 1
+#define AE_2_CONFLICT_CLR_MASK (((1 << 1) - 1) << 7)
+
+/* Bits of DMA_AXI_STATE (0x00000028) */
+
+#define TRANS_STATE_AEAWBAF_OFFSET 0
+#define TRANS_STATE_AEAWBAF_BITS 3
+#define TRANS_STATE_AEAWBAF_MASK (((1 << 3) - 1) << 0)
+
+/* Bits of DMA_STATS_TRIG (0x00000030) */
+
+#define STATS_TRIG_OFFSET 0
+#define STATS_TRIG_BITS 1
+#define STATS_TRIG_MASK (((1 << 1) - 1) << 0)
+
+#define STATS_STOP_OFFSET 1
+#define STATS_STOP_BITS 1
+#define STATS_STOP_MASK (((1 << 1) - 1) << 1)
+
+/* Bits of DMA_STATS_STATE (0x00000034) */
+
+#define STATE_C_OFFSET 0
+#define STATE_C_BITS 5
+#define STATE_C_MASK (((1 << 5) - 1) << 0)
+
+/* Bits of DMA_FRAME_STATE (0x00000038) */
+
+#define DMA_FRAME_ERR_CLR_OFFSET 0
+#define DMA_FRAME_ERR_CLR_BITS 1
+#define DMA_FRAME_ERR_CLR_MASK (((1 << 1) - 1) << 0)
+
+#endif /* _STATIS_H_INC_ */

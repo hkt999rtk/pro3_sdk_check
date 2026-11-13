@@ -1,0 +1,153 @@
+menu "CONFIG WIFI MODE"
+    config WIFI_NAN_ENABLE
+        bool "Enable NAN"
+        default n
+    config WIFI_P2P_ENABLE
+        bool "Enable P2P"
+        default n
+endmenu
+
+if WHC_INTF_IPC_MENU || WIFI_SINGLE_CORE_MENU
+    config WIFI_WPS_ENABLE_MENU
+        bool "Enable WPS"
+        default n
+endif
+
+config WIFI_EAP_ENABLE
+    bool "Enable EAP"
+    default n
+
+config WIFI_CSI_ENABLE
+    bool "Enable CSI"
+    default n
+
+config WIFI_ANTDIV_ENABLE
+    bool "Enable ANTDIV"
+    default n
+
+config WIFI_MCC_ENABLE
+    bool "Enable MCC"
+    default n
+
+config WIFI_11K_ENABLE
+    bool "Enable 11K"
+    default n
+
+config WIFI_11V_ENABLE
+    bool "Enable 11V"
+    default n
+
+config WIFI_11R_ENABLE
+    bool "Enable 11R"
+    default n
+
+config WIFI_SPEAKER_ENABLE
+    bool "Enable WIFI SPEAKER"
+    default n
+
+config WIFI_CAST_ENABLE
+    bool "Enable WIFI CAST"
+    default n
+
+config HIGH_TP_TEST
+    bool "Enable HIGH TP"
+    default n
+
+config RMESH_EN
+    bool "Enable R-mesh"
+    default n
+
+if RMESH_EN
+    config RNAT_EN
+        bool "Enable R-NAT"
+        default n
+
+    config RNAT_AUTOSEL_EN
+        bool "Enable R-NAT auto selection"
+        depends on RNAT_EN
+        default n
+
+    config RMESH_SOCKET_EN
+        bool "Enable R-mesh Socket"
+        default n
+
+if RMESH_SOCKET_EN
+    config RMESH_OTA_EN
+        bool "Enable R-mesh OTA"
+        default n
+endif
+
+if !RNAT_EN || RNAT_AUTOSEL_EN
+    config WIFI_RMESH_MAX_REFUGEE_NUM
+        int "Rmesh maximum refugee number"
+        depends on AMEBAGREEN2 || AMEBADPLUS || RTL8720F
+        default 32 if AMEBAGREEN2
+        default 14 if RTL8720F
+        default 4 if AMEBADPLUS
+        range 1 32 if AMEBAGREEN2
+        range 1 14 if RTL8720F
+        range 1 4 if AMEBADPLUS
+endif
+
+endif
+
+if LINUX_FW_EN
+    config WIFI_NAN_ENABLE
+        bool "Enable NAN"
+        default n
+    config WIFI_P2P_ENABLE
+        bool "Enable P2P"
+        default n
+endif
+
+config WIFI_NAN_HOST_APP
+    bool "Enable NAN host control app (km4_tz / WHC host)"
+    default n
+    select WIFI_NAN_ENABLE
+    help
+      Build the in-firmware NAN control + AT command front-end on the
+      application (WHC host / km4_tz) core. It drives the NP-core NAN driver
+      over the WHC IPC path (AT+NANINIT/START/PUB/SUB/STOP/DEINIT). The NP
+      core must have the NAN driver (CONFIG_NAN) enabled. Selecting this
+      also enables WIFI_NAN_ENABLE so the NP build skips wifi_feature_dis_nan.c
+      stubs that would otherwise mask the real weak handlers.
+
+# Only meaningful for IMG2 on FLASH (flash vs SRAM trade-off). For IMG2 on
+# PSRAM/SRAM the pre-link step just forces the TRX code to the default region.
+config WIFI_MOVE_TRX_CODE_TO_SRAM
+    bool "Move TRX code to SRAM"
+    depends on IMG2_FLASH
+    default y
+    help
+        Move the WLAN TX/RX path code (listed in section_placement.json5) into
+        SRAM for better throughput. When disabled the code is grouped into
+        .flash.only.text (flash). Applied by ameba_sections_rename.py at
+        pre-link (RTL8720F only for now).
+
+if WIFI_MOVE_TRX_CODE_TO_SRAM
+choice
+    prompt "TRX code in SRAM"
+    default WIFI_TRX_SRAM_PARTIAL
+    config WIFI_TRX_SRAM_PARTIAL
+        bool "Partial"
+        help
+            Only the hot TRX functions (.sram.only.text class) go to SRAM;
+            the rest stays in flash (.flash.only.text). No remap needed.
+    config WIFI_TRX_SRAM_ALL
+        bool "All"
+        help
+            All TRX functions go to SRAM.
+endchoice
+endif
+
+config WLAN_CRITICAL_CODE_IN_RAM
+    bool "Enable Critical code in RAM"
+    default y
+
+config WIFI_AP_STA_NUM
+    int "SoftAP maximum station number"
+    default 12 if AMEBASMART
+    default 5
+    range 1 25 if AMEBAGREEN2 || AMEBADPLUS || AMEBALITE || AMEBASMART
+    range 1 26 if RTL8720F
+    range 1 5

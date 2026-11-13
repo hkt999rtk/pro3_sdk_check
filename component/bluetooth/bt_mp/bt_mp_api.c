@@ -1,0 +1,56 @@
+/*
+ *******************************************************************************
+ * Copyright(c) 2021, Realtek Semiconductor Corporation. All rights reserved.
+ *******************************************************************************
+ */
+
+#include "bt_debug.h"
+#include <platform_autoconf.h>
+#ifdef CONFIG_BT_SDN
+#include "sdn_host.h"
+#include "hci_common.h"
+#else
+#include "hci_transport.h"
+#include "hci_controller.h"
+#include "hci_uart.h"
+#endif
+
+/**
+ * @brief     BT power on for MP test.
+ * @param     None
+ * @return    None
+ */
+void rtk_bt_mp_power_on(void)
+{
+	hci_set_mp(true);
+#ifdef CONFIG_BT_SDN
+	sdn_host_enable(SDN_INTF_BT);
+	sdn_host_set_mp(true);
+#else
+	if (hci_controller_open()) {
+		BT_LOGA("Patch download End!\r\n");
+		BT_LOGA("After download patch, deinit HCI driver & HCI uart!\r\n");
+		/* In order to keep controller powerd on, do not use hci_controller_close() */
+		hci_uart_close();
+		hci_transport_close();
+		hci_controller_free();
+	}
+#endif
+}
+
+/**
+ * @brief     BT power off for MP test.
+ * @param     None
+ * @return    None
+ */
+void rtk_bt_mp_power_off(void)
+{
+#ifdef CONFIG_BT_SDN
+	sdn_host_set_mp(false);
+	sdn_host_disable(SDN_INTF_BT);
+#else
+	/* just power off controller, uart & transport are already closed & freed */
+	hci_controller_close();
+#endif
+	hci_set_mp(false);
+}

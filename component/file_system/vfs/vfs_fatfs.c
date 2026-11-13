@@ -1,0 +1,635 @@
+#include <stdio.h>
+#include "vfs.h"
+#include "vfs_fatfs.h"
+#include "ff.h"
+#include "time.h"
+#include "os_wrapper.h"
+#include "diag.h"
+
+volatile uint8_t fatfs_mount_flag = 0;
+volatile uint8_t fatfs2_mount_flag = 0;
+fatfs_params_t fatfs_flash_param;
+
+#if defined(CONFIG_FATFS_SECOND_FLASH) || defined(CONFIG_FATFS_SD_SPI_MODE) || defined(CONFIG_FATFS_SD_MODE) || defined(CONFIG_FATFS_USB_HOST)
+fatfs_params_t fatfs_second_flash_param;
+#endif
+
+#if defined(CONFIG_FATFS_SD_HOTPLUG) || defined(CONFIG_FATFS_USB_HOST)
+void (*fatfs_hostplug_usr_cb)(int);
+
+void fatfs_set_hotplug_usr_cb(void (*cd_callback)(int status))
+{
+	fatfs_hostplug_usr_cb = cd_callback;
+}
+#endif
+
+// return drv_num assigned
+int FATFS_RegisterDiskDriver(ll_diskio_drv *drv)
+{
+	int drv_num = -1;
+
+	//find an idle drv num
+	for (int i = 0; i < _VOLUMES; i++) {
+		if (!disk.drv[i]) {
+			drv_num = i;
+			break;
+		}
+	}
+
+	if (drv_num != -1) {
+		drv->drv_num = drv_num;
+		disk.drv[drv_num] = drv;
+		disk.nbr++;
+	}
+	VFS_DBG(VFS_INFO, "FATFS Register: disk driver %d ", drv_num);
+	return drv_num;
+}
+
+int FATFS_UnRegisterDiskDriver(unsigned char drv_num)
+{
+	if (drv_num < _VOLUMES && disk.drv[drv_num]) {
+		disk.drv[drv_num] = NULL;
+		disk.nbr--;
+		return 0;
+	}
+	return -1;
+}
+
+
+/**
+  * @brief  Gets number of linked drivers to the FatFs module.
+  * @param  None
+  * @retval Number of attached drivers.
+  */
+int FATFS_getDrivernum(const char *TAG)
+{
+	ll_diskio_drv *drv;
+	unsigned int index;
+
+	for (index = 0; index < disk.nbr; index++) {
+		drv = disk.drv[index];
+		if (!strcmp((char const *)drv->TAG, (char const *)TAG)) {
+			return drv->drv_num;
+		}
+	}
+	return -1;
+}
+
+
+int fatfs_get_interface(int target)
+{
+	switch (target) {
+	case VFS_TARGET_FLASH_VFS2:
+	case VFS_TARGET_FLASH_APP_FATFS:
+		return FATFS_getDrivernum("FLASH");
+#if defined(CONFIG_FATFS_SD_MODE)
+	case VFS_TARGET_SD:
+		return FATFS_getDrivernum("SD");
+#endif
+#if defined(CONFIG_FATFS_SECOND_FLASH)
+	case VFS_TARGET_SECOND_FLASH:
+		return FATFS_getDrivernum("SECOND_FLASH");
+#endif
+#if defined(CONFIG_FATFS_SD_SPI_MODE)
+	case VFS_TARGET_SD_SPI:
+		return FATFS_getDrivernum("SD_SPI");
+#endif
+#if defined(CONFIG_FATFS_USB_HOST)
+	case VFS_TARGET_USBH:
+		return FATFS_getDrivernum("USB");
+#endif
+#if defined(VFS_RAM_FATFS)
+	case VFS_TARGET_RAM:
+		return FATFS_getDrivernum("RAM");
+#endif
+	default:
+		return -1;
+	}
+}
+
+int fatfs_open(void *fs, const char *filename, const char *mode, vfs_file *finfo)
+{
+	(void) fs;
+	FIL *fil = rtos_mem_malloc(sizeof(FIL));
+	uint8_t mode_mapping = 0;
+	FRESULT res = FR_OK;
+	if (fil == NULL) {
+		return -1;
+	}
+
+	if (strchr(mode, 'r')) {
+		mode_mapping |= FA_READ;
+	}
+	if (strchr(mode, 'w')) {
+		if (strchr(mode, 'x')) {
+			mode_mapping |= (FA_CREATE_NEW | FA_WRITE);
+		} else {
+			mode_mapping |= (FA_CREATE_ALWAYS | FA_WRITE);
+		}
+	}
+	if (strchr(mode, 'a')) {
+		mode_mapping |= (FA_OPEN_APPEND | FA_WRITE);
+	}
+	if (strchr(mode, '+')) {
+		mode_mapping |= (FA_READ | FA_WRITE);
+	}
+
+	res = f_open(fil, filename, mode_mapping);
+	if (res != 0) {
+		if (res == FR_NO_FILE) {
+			VFS_DBG(VFS_WARNING, "file is not exist");
+		} else {
+			VFS_DBG(VFS_ERROR, "vfs-fatfs fopen error %d \r\n", res);
+		}
+		rtos_mem_free(fil);
+		return -1;
+	}
+	finfo->file = (void *)fil;
+	return res;
+}
+
+int fatfs_read(void *fs, unsigned char *buf, unsigned int size, unsigned int count, vfs_file *finfo)
+{
+	(void) fs;
+	FIL *fil = (FIL *)finfo->file;
+	size_t br;
+	FRESULT res = f_read(fil, buf, size * count, (UINT *)&br);
+	if (res > 0) {
+		VFS_DBG(VFS_ERROR, "vfs-fatfs fread error %d \r\n", res);
+		return -res;
+	}
+	return br;
+}
+
+int fatfs_write(void *fs, unsigned char *buf, unsigned int size, unsigned int count, vfs_file *finfo)
+{
+	(void) fs;
+	FIL *fil = (FIL *)finfo->file;
+	size_t bw;
+	FRESULT res = f_write(fil, buf, size * count, (UINT *)&bw);
+	if (res > 0) {
+		VFS_DBG(VFS_ERROR, "vfs-fatfs fwrite error %d \r\n", res);
+		return -res;
+	}
+	return bw;
+}
+
+int fatfs_close(void *fs, vfs_file *finfo)
+{
+	(void) fs;
+	FIL *fil = (FIL *)finfo->file;
+	FRESULT res = f_close(fil);
+	rtos_mem_free(fil);
+	if (res > 0) {
+		VFS_DBG(VFS_ERROR, "vfs-fatfs fclose error %d \r\n", res);
+		return -1;
+	}
+	return 0;
+}
+
+int fatfs_seek(void *fs, long int offset, int origin, vfs_file *finfo)
+{
+	(void) fs;
+	FIL *fil = (FIL *)finfo->file;
+	int size = f_size(fil);
+	int curr = f_tell(fil);
+	FRESULT res = FR_INT_ERR;
+	switch (origin) {
+	case SEEK_SET:
+		res = f_lseek(fil, offset);
+		break;
+	case SEEK_CUR:
+		res = f_lseek(fil, curr + offset);
+		break;
+	case SEEK_END:
+		res = f_lseek(fil, size + offset);
+		break;
+	}
+	if (res > 0) {
+		VFS_DBG(VFS_ERROR, "vfs-fatfs fseek error %d \r\n", res);
+		return -1;
+	}
+	return 0;
+}
+
+void fatfs_rewind(void *fs, vfs_file *finfo)
+{
+	(void) fs;
+	FIL *fil = (FIL *)finfo->file;
+	f_lseek(fil, 0);
+}
+
+int fatfs_fgetops(void *fs, vfs_file *finfo)
+{
+	(void) fs;
+	FIL *fil = (FIL *)finfo->file;
+	int value = 0;
+	value = f_tell(fil);
+	return value;
+}
+
+int fatfs_fsetops(void *fs, unsigned int offset, vfs_file *finfo)
+{
+	(void) fs;
+	FIL *fil = (FIL *)finfo->file;
+	int value = 0;
+	value = f_lseek(fil, offset);
+
+	if (value > 0) {
+		VFS_DBG(VFS_ERROR, "vfs-fatfs fsetops error %d \r\n", value);
+		return -1;
+	}
+
+	return 0;
+}
+
+int fatfs_fflush(void *fs, vfs_file *finfo)
+{
+	(void) fs;
+	FIL *fil = (FIL *)finfo->file;
+	FRESULT res = f_sync(fil);
+
+	if (res > 0) {
+		VFS_DBG(VFS_ERROR, "vfs-fatfs fflush error %d \r\n", res);
+	}
+
+	return -res;
+}
+
+int fatfs_remove(void *fs, const char *name)
+{
+	(void) fs;
+	FRESULT res = f_unlink(name);
+
+	if (res == FR_NO_FILE || res == FR_NO_PATH) {
+		/* Removing a file that isn't there is benign (POSIX remove() returns
+		 * -1/ENOENT); log at INFO, not ERROR — matches vfs_littlefs behavior and
+		 * avoids noise from callers that remove() up-front to clear leftovers. */
+		VFS_DBG(VFS_INFO, "The file to be deleted does not exist.\r\n");
+	} else if (res > 0) {
+		VFS_DBG(VFS_ERROR, "vfs-fatfs remove error %d \r\n", res);
+	}
+
+	return -res;
+}
+
+int fatfs_rename(void *fs, const char *old_name, const char *new_name)
+{
+	(void) fs;
+	FRESULT res = f_rename(old_name, new_name);
+
+	if (res > 0) {
+		VFS_DBG(VFS_ERROR, "vfs-fatfs remove error %d \r\n", res);
+	}
+
+	return -res;
+}
+
+int fatfs_feof(void *fs, vfs_file *finfo)
+{
+	(void) fs;
+	FIL *fil = (FIL *)finfo->file;
+	return f_eof(fil);
+}
+
+int fatfs_ferror(vfs_file *finfo)
+{
+	FIL *fil = (FIL *)finfo->file;
+	return f_error(fil);
+}
+
+int fatfs_ftell(void *fs, vfs_file *finfo)
+{
+	(void) fs;
+	FIL *fil = (FIL *)finfo->file;
+	return f_tell(fil);
+}
+
+int fatfs_ftruncate(void *fs, vfs_file *finfo, off_t length)
+{
+	(void) fs;
+	FIL *fil = (FIL *)finfo->file;
+	FRESULT res = FR_INT_ERR;
+	res = f_lseek(fil, length);
+	if (res > 0) {
+		return -1;
+	}
+	res = f_truncate(fil);
+	if (res > 0) {
+		VFS_DBG(VFS_ERROR, "vfs-fatfs ftruncate error %d \r\n", res);
+		return -1;
+	}
+	return 0;
+}
+
+int fatfs_opendir(void *fs, const char *name, vfs_file *finfo)
+{
+	(void) fs;
+	DIR *pdir = rtos_mem_malloc(sizeof(DIR));
+	FRESULT res = FR_OK;
+	if (pdir == NULL) {
+		return -1;
+	}
+	res = f_opendir(pdir, name);
+	if (res > 0) {
+		VFS_DBG(VFS_ERROR, "vfs-fatfs opendir error %d \r\n", res);
+		rtos_mem_free(pdir);
+		return res;
+	}
+	finfo->file = (void *)pdir;
+	return res;
+}
+
+struct dirent *fatfs_readdir(void *fs, vfs_file *finfo)
+{
+	(void) fs;
+	DIR *pdir = (DIR *)finfo->file;
+	FRESULT res;
+	if (pdir == NULL) {
+		return NULL;
+	}
+	FILINFO m_fileinfo;
+
+	res = f_readdir(pdir, &m_fileinfo);
+	if (res != FR_OK) {
+		VFS_DBG(VFS_ERROR, "vfs-fatfs readdir: error (%d)", res);
+		return NULL;
+	}
+
+	if (m_fileinfo.fname[0] == 0) {
+		return NULL;
+	}
+
+	finfo->ent.d_ino = 0;
+	finfo->ent.d_off = 0;
+	finfo->ent.d_reclen = m_fileinfo.fsize;
+	if (m_fileinfo.fattrib & AM_DIR) {
+		finfo->ent.d_type = DT_DIR;
+	} else {
+		finfo->ent.d_type = DT_REG;
+	}
+	strcpy(finfo->ent.d_name, m_fileinfo.fname);
+	return &finfo->ent;
+}
+
+int fatfs_closedir(void *fs, vfs_file *finfo)
+{
+	(void) fs;
+	DIR *pdir = (DIR *)finfo->file;
+	FRESULT res = f_closedir(pdir);
+	rtos_mem_free(pdir);
+	if (res > 0) {
+		VFS_DBG(VFS_ERROR, "vfs-fatfs closedir error %d \r\n", res);
+		return -1;
+	} else {
+		return 0;
+	}
+}
+
+int fatfs_mkdir(void *fs, const char *pathname)
+{
+	(void) fs;
+	FRESULT res = f_mkdir(pathname);
+	if (res > 0 && res != FR_EXIST) {
+		VFS_DBG(VFS_ERROR, "vfs-fatfs mkdir error %d \r\n", res);
+	}
+	return -res;
+}
+
+int fatfs_rmdir(void *fs, const char *path)
+{
+	(void) fs;
+	FRESULT res = f_unlink(path);
+	if (res > 0) {
+		VFS_DBG(VFS_ERROR, "vfs-fatfs rmdir error %d \r\n", res);
+	}
+	return -res;
+}
+
+int fatfs_access(void *fs, const char *pathname, int mode)
+{
+	(void) fs;
+	FRESULT res;
+	FILINFO finfo;
+
+	res = f_stat(pathname, &finfo);
+
+	VFS_DBG(VFS_INFO, "%s, check 0x%x", pathname, mode);
+
+	if (res == FR_NO_FILE) {
+		return -1;
+	}
+
+
+
+	if (mode & R_OK) {
+		return 0;
+	}
+
+	if (mode & W_OK) {
+		if (finfo.fattrib & AM_RDO) {
+			return -1;
+		} else {
+			return 0;
+		}
+	}
+
+	if (mode & X_OK) {
+		if (finfo.fattrib & AM_RDO) {
+			return -1;
+		} else {
+			return 0;
+		}
+	}
+	return 0;
+}
+
+int fatfs_stat(void *fs, char *path, struct stat *buf)
+{
+	(void) fs;
+	FILINFO finfo;
+
+	FRESULT res = f_stat(path, &finfo);
+	if (res == FR_NO_FILE) {
+		return -1;
+	}
+
+	buf->st_dev = 0;
+	buf->st_ino = 0;
+
+	mode_t st_mode = 0;
+	if (finfo.fattrib & AM_DIR) {
+		if (finfo.fattrib & AM_RDO) {
+			st_mode |= (S_IFDIR | 0x555);
+		} else {
+			st_mode |= (S_IFDIR | 0x777);
+		}
+	} else {
+		if (finfo.fattrib & AM_RDO) {
+			st_mode |= (S_IFREG | 0x555);
+		} else {
+			st_mode |= (S_IFREG | 0x777);
+		}
+	}
+
+	buf->st_mode = st_mode;
+	buf->st_nlink = 0;
+	buf->st_uid = 0;
+	buf->st_gid = 0;
+	buf->st_rdev = 0;
+	buf->st_size = finfo.fsize;
+	buf->st_blksize = 0;
+	buf->st_blocks = 0;
+
+	struct tm tm  = {0};
+	int year = (finfo.fdate >> 9) + 1980;
+	int month = (finfo.fdate >> 5) & 15;
+	int day = finfo.fdate & 31;
+	int hour = finfo.ftime >> 11;
+	int minute = (finfo.ftime >> 5) & 63;
+
+	tm.tm_year = year - 1900; /* years since 1900 */
+	tm.tm_mon = month - 1;
+	tm.tm_mday = day;
+	tm.tm_hour = hour;
+	tm.tm_min = minute;
+
+	time_t t = mktime(&tm);
+
+	buf->st_atime = t;
+	buf->st_mtime = t;
+	buf->st_ctime = t;
+	return 0;
+}
+
+int fatfs_mount(int target)
+{
+	int ret;
+	/* External FATFS targets share fatfs2_mount_flag. */
+	volatile uint8_t *mount_flag = &fatfs2_mount_flag;
+
+	switch (target) {
+	case VFS_TARGET_FLASH_VFS2:
+	case VFS_TARGET_FLASH_APP_FATFS:
+		ret = fatfs_flash_init(target);
+		mount_flag = &fatfs_mount_flag;
+		break;
+#if defined(CONFIG_FATFS_SECOND_FLASH)
+	case VFS_TARGET_SECOND_FLASH:
+		ret = fatfs_flash_init(target);
+		break;
+#endif
+#if defined(CONFIG_FATFS_SD_MODE)
+	case VFS_TARGET_SD:
+#endif
+#if defined(CONFIG_FATFS_SD_SPI_MODE)
+	case VFS_TARGET_SD_SPI:
+#endif
+#if defined(CONFIG_FATFS_SD_MODE) || defined(CONFIG_FATFS_SD_SPI_MODE)
+		ret = fatfs_sd_init(target);
+		break;
+#endif
+#if defined(CONFIG_FATFS_USB_HOST)
+	case VFS_TARGET_USBH:
+		ret = fatfs_usbh_init();
+		break;
+#endif
+#if defined(VFS_RAM_FATFS)
+	case VFS_TARGET_RAM:
+		ret = fatfs_ram_init();
+		mount_flag = &ram_mount_flag;
+		break;
+#endif
+	default:
+		VFS_DBG(VFS_ERROR, "Unsupported FATFS target %d", target);
+		return -1;
+	}
+
+	*mount_flag = (ret == 0) ? 1 : 0;
+	if (ret) {
+		VFS_DBG(VFS_ERROR, "Fatfs target %d mount fail, ret is %d", target, ret);
+	} else {
+		VFS_DBG(VFS_INFO, "Fatfs target %d mount", target);
+	}
+	return ret;
+}
+
+int fatfs_ummount(int target)
+{
+	int ret;
+	/* External FATFS targets share fatfs2_mount_flag. */
+	volatile uint8_t *mount_flag = &fatfs2_mount_flag;
+
+	switch (target) {
+	case VFS_TARGET_FLASH_VFS2:
+	case VFS_TARGET_FLASH_APP_FATFS:
+		ret = fatfs_flash_close(target);
+		mount_flag = &fatfs_mount_flag;
+		break;
+#if defined(CONFIG_FATFS_SECOND_FLASH)
+	case VFS_TARGET_SECOND_FLASH:
+		ret = fatfs_flash_close(target);
+		break;
+#endif
+#if defined(CONFIG_FATFS_SD_MODE)
+	case VFS_TARGET_SD:
+#endif
+#if defined(CONFIG_FATFS_SD_SPI_MODE)
+	case VFS_TARGET_SD_SPI:
+#endif
+#if defined(CONFIG_FATFS_SD_MODE) || defined(CONFIG_FATFS_SD_SPI_MODE)
+		ret = fatfs_sd_close();
+		break;
+#endif
+#if defined(CONFIG_FATFS_USB_HOST)
+	case VFS_TARGET_USBH:
+		ret = fatfs_usbh_close();
+		break;
+#endif
+#if defined(VFS_RAM_FATFS)
+	case VFS_TARGET_RAM:
+		ret = fatfs_ram_close();
+		mount_flag = &ram_mount_flag;
+		break;
+#endif
+	default:
+		VFS_DBG(VFS_ERROR, "Unsupported FATFS target %d", target);
+		return -1;
+	}
+
+	*mount_flag = 0;
+	VFS_DBG(VFS_INFO, "Fatfs target %d unmount", target);
+	return ret;
+}
+
+const vfs_opt fatfs_drv = {
+#if !FF_FS_READONLY
+	.write = fatfs_write,
+	.fflush = fatfs_fflush,
+	.remove = fatfs_remove,
+	.rename = fatfs_rename,
+	.ftruncate = fatfs_ftruncate,
+	.mkdir = fatfs_mkdir,
+	.rmdir = fatfs_rmdir,
+#endif
+	.open = fatfs_open,
+	.read = fatfs_read,
+	.close = fatfs_close,
+	.seek  = fatfs_seek,
+	.rewind = fatfs_rewind,
+	.fgetpos = fatfs_fgetops,
+	.fsetpos = fatfs_fsetops,
+	.eof   = fatfs_feof,
+	.error = fatfs_ferror, //ferror
+	.tell  = fatfs_ftell,
+	.opendir = fatfs_opendir,
+	.readdir = fatfs_readdir,
+	.closedir = fatfs_closedir,
+	.stat = fatfs_stat,
+	.access = fatfs_access,
+	.mount = fatfs_mount,
+	.unmount = fatfs_ummount,
+	.get_interface = fatfs_get_interface,
+	.TAG	= "fatfs",
+	.vfs_type = VFS_FATFS
+};

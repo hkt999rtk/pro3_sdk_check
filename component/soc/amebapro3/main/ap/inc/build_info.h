@@ -1,0 +1,5 @@
+#define UTS_VERSION "2026-11-12 15:43:26"
+#define RTL_FW_COMPILE_TIME "2026-11-12 15:43:26"
+#define RTL_FW_COMPILE_BY "jenkins"
+#define RTL_FW_COMPILE_HOST "iot"
+#define RTL_FW_COMPILER "arm-none-eabi-gcc"

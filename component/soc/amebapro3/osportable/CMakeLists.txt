@@ -1,0 +1,15 @@
+
+
+if("${c_MCU_PROJECT_NAME}" STREQUAL "fp")
+    ameba_add_subdirectory(AmebaPro3_FP)
+elseif("${c_MCU_PROJECT_NAME}" STREQUAL "np")
+	if(CONFIG_TRUSTZONE)
+		ameba_add_subdirectory(AmebaPro3_NP_TZ)
+	else()
+		ameba_add_subdirectory(AmebaPro3_NP)
+	endif()
+elseif("${c_MCU_PROJECT_NAME}" STREQUAL "vp")
+    ameba_add_subdirectory(AmebaPro3_VP)	
+elseif("${c_MCU_PROJECT_NAME}" STREQUAL "ap")
+    ameba_add_subdirectory(AmebaPro3_AP)
+endif()

@@ -1,0 +1,120 @@
+﻿
+loop_cnt = 1
+pass_per_loop = 1
+loop_pass_cnt = 0
+testname = 'remap_slice_wrap'
+outname = 'full_1080_multi_264_hdrsnr'
+
+all_loop_cnt = 0
+:all_loop
+all_loop_cnt = all_loop_cnt + 1
+
+
+clearscreen 0
+
+; get a user name
+getenv 'USERNAME' username
+; get the date and time
+gettime timestr "%Y%m%d-%H%M%S"
+
+; add the user name and the timestamp to the log file name
+sprintf2 filename 'c:\martin\%s_%s_loop%d.log' testname timestr all_loop_cnt
+
+; change the current directory
+;changedir 'C:\martin'
+;exec 'C:\WINDOWS\system32\cmd.exe /c rm *.raw'
+
+
+logopen filename 0 0
+logwrite 'Log start'#13#10
+logwrite '*****************************************************'#13#10
+
+remap_test_pass = 0
+
+send 'rmp5 isp 1 120'
+mpause 200
+send ' 1920 1080'
+mpause 200
+send ' 0 4 1 0'   ; enc_type	wrapnum burstsize lowlatency
+mpause 200
+send ' 0 0 0'   ; remap_mode : bit0: hdr, bit1:slice, bit2: partial slice, bit3: RTT, bit4: partial SRAM, bit5: compress / fixp_ran / all_vsram
+mpause 200
+send ' 5 3 0'   ; stream_fr_cnt fixp_hts_ratio_2_base PartialSRAM_ratio
+mpause 200
+send ' 0 0'   ; cmpr_hdr_vsram, slice_th(0=disable)
+mpause 200
+sendln ''
+wait 'udCRC'
+
+timeout = 2
+send 'rmp1 r'
+mpause 200
+send ' 60100000'
+mpause 200
+sendln ''
+wait '0x00000030'
+
+if result=1 then
+	remap_test_pass = remap_test_pass+1
+endif
+
+if remap_test_pass = pass_per_loop then
+	loop_pass_cnt = loop_pass_cnt+1
+endif
+
+
+exec 'C:\WINDOWS\system32\cmd.exe /c rm remap_result*.txt' 'hide' 1
+
+sprintf2 ckfilename 'c:\martin\remap_result_%s_%s_loop%d.txt' testname timestr all_loop_cnt
+
+sprintf2 rename_cmd1 'C:\WINDOWS\system32\cmd.exe /c mv result.h264 %s.h264' outname
+exec rename_cmd1 'hide' 1
+
+sprintf2 checkcmd 'C:\WINDOWS\system32\cmd.exe /c compare_remap_result.bat c:\martin\remap_golden\slicewarp_h264 > %s' ckfilename 
+exec checkcmd 'hide' 1
+
+; 打开临时文件读取结果
+fileopen fhandle ckfilename 0
+
+case_cnt = 0
+pass_cnt = 0
+:loop
+filereadln fhandle line
+if result goto fclose
+case_cnt = case_cnt + 1
+strscan line 'identical'
+if result then
+	pass_cnt = pass_cnt + 1
+endif	
+
+goto loop
+
+:fclose
+fileclose fhandle
+
+
+
+if pass_cnt = pass_per_loop then
+	loop_pass_cnt = loop_pass_cnt+1
+endif
+
+sprintf2 exec_cmd1 'C:\WINDOWS\system32\cmd.exe /c mv *.h264 %s' testname
+exec exec_cmd1 'hide' 1
+
+sprintf2 exec_cmd2 'C:\WINDOWS\system32\cmd.exe /c mv remap_result*.txt %s' testname
+exec exec_cmd2 'hide' 1
+
+logclose
+sprintf2 exec_cmd3 'C:\WINDOWS\system32\cmd.exe /c mv *.log %s' testname
+exec exec_cmd3 'hide' 1
+
+
+if all_loop_cnt = loop_cnt goto all_close
+goto all_loop
+
+:all_close
+
+sprintf2 geLoopPass 'test loop %d: pass- %d loop x case %d' loop_cnt loop_pass_cnt pass_per_loop
+messagebox geLoopPass 'check all loop result'
+
+end

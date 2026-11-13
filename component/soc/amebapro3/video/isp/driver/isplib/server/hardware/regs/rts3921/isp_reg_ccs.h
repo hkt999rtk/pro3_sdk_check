@@ -1,0 +1,209 @@
+
+//tool_version:1.4.35
+
+#ifndef _CCS_H_INC_
+#define _CCS_H_INC_
+
+#include <isp_reg.h>
+#include <isp_reg_base.h>
+
+#define DVP_TRANSFER (CCS_BASE_ADDR + 0x00000000) //0x00000400
+#define DVP_CONFIG (CCS_BASE_ADDR + 0x00000004) //0x00000404
+#define DVP_PULL_CTL (CCS_BASE_ADDR + 0x00000008) //0x00000408
+#define DVP_CROP_START_X (CCS_BASE_ADDR + 0x00000010) //0x00000410
+#define DVP_CROP_START_Y (CCS_BASE_ADDR + 0x00000014) //0x00000414
+#define DVP_CROP_WIDTH (CCS_BASE_ADDR + 0x00000018) //0x00000418
+#define DVP_CROP_HEIGHT (CCS_BASE_ADDR + 0x0000001c) //0x0000041c
+#define DVP_FRAME_CNT (CCS_BASE_ADDR + 0x00000020) //0x00000420
+#define DVP_DRIVE_SEL (CCS_BASE_ADDR + 0x00000024) //0x00000424
+#define DVP_SLEWRATE_CTL (CCS_BASE_ADDR + 0x00000028) //0x00000428
+#define DVP_MISC_CTL (CCS_BASE_ADDR + 0x0000002c) //0x0000042c
+#define DVP_CLK_SWITCH_HW (CCS_BASE_ADDR + 0x00000030) //0x00000430
+#define DVP_SUBSAMPLE_CTL (CCS_BASE_ADDR + 0x00000034) //0x00000434
+#define DVP_SUBSAMPLE_CFG (CCS_BASE_ADDR + 0x00000038) //0x00000438
+#define DVP_FRMAE_VLD_CTL (CCS_BASE_ADDR + 0x0000003c) //0x0000043c
+#define DVP_JPEG_TRANSFER (CCS_BASE_ADDR + 0x00000040) //0x00000440
+#define PCLK_GATING_CTL (CCS_BASE_ADDR + 0x00000044) //0x00000444
+#define DVP_PAD_CTL (CCS_BASE_ADDR + 0x00000048) //0x00000448
+
+/* Bits of DVP_TRANSFER (0x00000000) */
+
+#define FW_RST_OFFSET 0
+#define FW_RST_BITS 1
+#define FW_RST_MASK (((1 << 1) - 1) << 0)
+
+#define CCS_EN_OFFSET 1
+#define CCS_EN_BITS 1
+#define CCS_EN_MASK (((1 << 1) - 1) << 1)
+
+#define IDLE4FW_OFFSET 7
+#define IDLE4FW_BITS 1
+#define IDLE4FW_MASK (((1 << 1) - 1) << 7)
+
+/* Bits of DVP_CONFIG (0x00000004) */
+
+#define HSYNC_POLARITY_OFFSET 0
+#define HSYNC_POLARITY_BITS 1
+#define HSYNC_POLARITY_MASK (((1 << 1) - 1) << 0)
+
+#define VSYNC_POLARITY_OFFSET 1
+#define VSYNC_POLARITY_BITS 1
+#define VSYNC_POLARITY_MASK (((1 << 1) - 1) << 1)
+
+#define PIXCLK_EDGE_SEL_OFFSET 2
+#define PIXCLK_EDGE_SEL_BITS 1
+#define PIXCLK_EDGE_SEL_MASK (((1 << 1) - 1) << 2)
+
+#define PCLK_STOP_MODE_OFFSET 3
+#define PCLK_STOP_MODE_BITS 1
+#define PCLK_STOP_MODE_MASK (((1 << 1) - 1) << 3)
+
+#define SSOR_OP_MODE_OFFSET 4
+#define SSOR_OP_MODE_BITS 2
+#define SSOR_OP_MODE_MASK (((1 << 2) - 1) << 4)
+
+#define SSOR_RAW12_MODE_OFFSET 6
+#define SSOR_RAW12_MODE_BITS 1
+#define SSOR_RAW12_MODE_MASK (((1 << 1) - 1) << 6)
+
+/* Bits of DVP_PULL_CTL (0x00000008) */
+
+#define DOUT_PULLCTL_OFFSET 0
+#define DOUT_PULLCTL_BITS 2
+#define DOUT_PULLCTL_MASK (((1 << 2) - 1) << 0)
+
+#define HSYNC_PULLCTL_OFFSET 2
+#define HSYNC_PULLCTL_BITS 2
+#define HSYNC_PULLCTL_MASK (((1 << 2) - 1) << 2)
+
+#define VSYNC_PULLCTL_OFFSET 4
+#define VSYNC_PULLCTL_BITS 2
+#define VSYNC_PULLCTL_MASK (((1 << 2) - 1) << 4)
+
+#define PIX_CLK_PULLCTL_OFFSET 6
+#define PIX_CLK_PULLCTL_BITS 2
+#define PIX_CLK_PULLCTL_MASK (((1 << 2) - 1) << 6)
+
+#define SYS_CLK_PULLCTL_OFFSET 8
+#define SYS_CLK_PULLCTL_BITS 2
+#define SYS_CLK_PULLCTL_MASK (((1 << 2) - 1) << 8)
+
+/* Bits of DVP_CROP_START_X (0x00000010) */
+
+#define DMY_PIX_NUM_OFFSET 0
+#define DMY_PIX_NUM_BITS 16
+#define DMY_PIX_NUM_MASK (((1 << 16) - 1) << 0)
+
+/* Bits of DVP_CROP_START_Y (0x00000014) */
+
+#define DMY_LINE_NUM_OFFSET 0
+#define DMY_LINE_NUM_BITS 16
+#define DMY_LINE_NUM_MASK (((1 << 16) - 1) << 0)
+
+/* Bits of DVP_CROP_WIDTH (0x00000018) */
+
+#define PIX_NUM_OFFSET 0
+#define PIX_NUM_BITS 16
+#define PIX_NUM_MASK (((1 << 16) - 1) << 0)
+
+/* Bits of DVP_CROP_HEIGHT (0x0000001c) */
+
+#define LINE_NUM_OFFSET 0
+#define LINE_NUM_BITS 16
+#define LINE_NUM_MASK (((1 << 16) - 1) << 0)
+
+/* Bits of DVP_FRAME_CNT (0x00000020) */
+
+#define FRAME_NUM_OFFSET 0
+#define FRAME_NUM_BITS 8
+#define FRAME_NUM_MASK (((1 << 8) - 1) << 0)
+
+/* Bits of DVP_DRIVE_SEL (0x00000024) */
+
+#define CCS_DRV_SEL_OFFSET 0
+#define CCS_DRV_SEL_BITS 2
+#define CCS_DRV_SEL_MASK (((1 << 2) - 1) << 0)
+
+/* Bits of DVP_SLEWRATE_CTL (0x00000028) */
+
+#define CCS_SR_CTRL_OFFSET 0
+#define CCS_SR_CTRL_BITS 1
+#define CCS_SR_CTRL_MASK (((1 << 1) - 1) << 0)
+
+#define CCS_HCLK_SR_CTRL_OFFSET 1
+#define CCS_HCLK_SR_CTRL_BITS 1
+#define CCS_HCLK_SR_CTRL_MASK (((1 << 1) - 1) << 1)
+
+/* Bits of DVP_MISC_CTL (0x0000002c) */
+
+#define HB_SWAP_OFFSET 0
+#define HB_SWAP_BITS 1
+#define HB_SWAP_MASK (((1 << 1) - 1) << 0)
+
+/* Bits of DVP_CLK_SWITCH_HW (0x00000030) */
+
+#define SSOR_ACHG_CLK_SET_OFFSET 0
+#define SSOR_ACHG_CLK_SET_BITS 1
+#define SSOR_ACHG_CLK_SET_MASK (((1 << 1) - 1) << 0)
+
+/* Bits of DVP_SUBSAMPLE_CTL (0x00000034) */
+
+#define P_SUB_SAMPLE_EN_OFFSET 0
+#define P_SUB_SAMPLE_EN_BITS 1
+#define P_SUB_SAMPLE_EN_MASK (((1 << 1) - 1) << 0)
+
+#define L_SUB_SAMPLE_EN_OFFSET 1
+#define L_SUB_SAMPLE_EN_BITS 1
+#define L_SUB_SAMPLE_EN_MASK (((1 << 1) - 1) << 1)
+
+/* Bits of DVP_SUBSAMPLE_CFG (0x00000038) */
+
+#define P_SUB_DROP_NUM_OFFSET 0
+#define P_SUB_DROP_NUM_BITS 4
+#define P_SUB_DROP_NUM_MASK (((1 << 4) - 1) << 0)
+
+#define P_SUB_VLD_NUM_OFFSET 4
+#define P_SUB_VLD_NUM_BITS 4
+#define P_SUB_VLD_NUM_MASK (((1 << 4) - 1) << 4)
+
+#define L_SUB_DROP_NUM_OFFSET 8
+#define L_SUB_DROP_NUM_BITS 4
+#define L_SUB_DROP_NUM_MASK (((1 << 4) - 1) << 8)
+
+#define L_SUB_VLD_NUM_OFFSET 12
+#define L_SUB_VLD_NUM_BITS 4
+#define L_SUB_VLD_NUM_MASK (((1 << 4) - 1) << 12)
+
+/* Bits of DVP_FRMAE_VLD_CTL (0x0000003c) */
+
+#define FRAME_VLD_NUM_OFFSET 0
+#define FRAME_VLD_NUM_BITS 4
+#define FRAME_VLD_NUM_MASK (((1 << 4) - 1) << 0)
+
+/* Bits of DVP_JPEG_TRANSFER (0x00000040) */
+
+#define JPG_MODE_OFFSET 0
+#define JPG_MODE_BITS 2
+#define JPG_MODE_MASK (((1 << 2) - 1) << 0)
+
+#define JPG_EN_OFFSET 2
+#define JPG_EN_BITS 1
+#define JPG_EN_MASK (((1 << 1) - 1) << 2)
+
+#define JPG_VSYNC_SEL_OFFSET 3
+#define JPG_VSYNC_SEL_BITS 1
+#define JPG_VSYNC_SEL_MASK (((1 << 1) - 1) << 3)
+
+/* Bits of PCLK_GATING_CTL (0x00000044) */
+
+#define PCLK_GATING_EN_OFFSET 0
+#define PCLK_GATING_EN_BITS 1
+#define PCLK_GATING_EN_MASK (((1 << 1) - 1) << 0)
+
+/* Bits of DVP_PAD_CTL (0x00000048) */
+
+#define PIX_BIT_SWP_OFFSET 0
+#define PIX_BIT_SWP_BITS 1
+#define PIX_BIT_SWP_MASK (((1 << 1) - 1) << 0)
+
+#endif /* _CCS_H_INC_ */

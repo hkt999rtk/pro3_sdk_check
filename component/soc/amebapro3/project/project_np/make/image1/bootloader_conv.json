@@ -1,0 +1,7 @@
+{
+	"sections": [".ram_image1.entry", ".ram_image1.text", ".ram_image1.data"],
+	"entry": "RamStartTable",
+	"align_size": 128,
+	"boot_idx": "0x01010101"
+}
+ 

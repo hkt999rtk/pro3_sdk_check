@@ -1,0 +1,28 @@
+/*
+ * Copyright 2024 Realtek
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#ifndef _RTS_CAMERA_CONFIG_H
+#define _RTS_CAMERA_CONFIG_H
+
+#define RTSCAM_SOC_MIN_W			80
+#define RTSCAM_SOC_MIN_H			60
+
+#define RTSCAM_MAX_STM_COUNT		5
+
+#define RTSCAM_YUV_MAX_STRM_NUM		4
+#define RTSCAM_MAX_STREAM_NUM		(RTSCAM_YUV_MAX_STRM_NUM + 1)
+#define RTSCAM_RGB_YONLY_STRM_IDX	(RTSCAM_MAX_STREAM_NUM - 1)
+
+/* format type */
+#define RTSCAM_FORMAT_TYPE_YUV420_SEMIPLANAR		(1 << 0)
+#define RTSCAM_FORMAT_TYPE_YUV422_SEMIPLANAR		(1 << 1)
+#define RTSCAM_FORMAT_TYPE_RGB				(1 << 2)
+#define RTSCAM_FORMAT_TYPE_Y_ONLY			(1 << 3)
+#define RTSCAM_FORMAT_TYPE_YUYV				(1 << 4)
+#define RTSCAM_FORMAT_TYPE_YVYU				(1 << 5)
+#define RTSCAM_FORMAT_TYPE_128BIT_3PIXEL		(1 << 6)
+
+#endif

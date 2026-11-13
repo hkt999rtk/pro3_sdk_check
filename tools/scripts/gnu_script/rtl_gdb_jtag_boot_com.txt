@@ -1,0 +1,47 @@
+# GDB script for loading ram.bin process
+# Common script for all Ameba SOC platforms
+# Platform-specific variables should be set via -ex before sourcing this script
+# By gdb -ex set: GDB_PORT
+
+#===============================================================================
+# GDB connection
+set remotetimeout 100000
+# HOST_IP is set via gdb.py --remote-server (passed through -ex).
+# Port $GDB_PORT will be set via -ex parameter before sourcing this script
+# target remote :2335
+printf "HOST_IP=[%s] GDB_PORT=[%d]\n", $HOST_IP, $GDB_PORT
+eval "target remote %s:%d", $HOST_IP, $GDB_PORT
+
+#===============================================================================
+#Message display setting
+#disable all messages
+
+set verbose off
+set complaints 0
+set confirm off
+set exec-done-display off
+show exec-done-display
+set trace-commands off
+#set debug aix-thread off
+#set debug dwarf2-die 0
+set debug displaced off
+set debug expression 0
+set debug frame 0
+set debug infrun 0
+set debug observer 0
+set debug overload 0
+#set debugvarobj 0
+set pagination off
+set print address off
+set print symbol-filename off
+set print symbol off
+set print pretty off
+set print object off
+#set debug notification off
+set debug parser off
+set debug remote 0
+
+#===============================================================================
+#Halt only, the caller script resets the cpu when needed (load rom / flash write)
+monitor halt
+monitor waithalt 2000

@@ -1,0 +1,283 @@
+menu "CONFIG File System"
+    config VFS_MENU
+        bool "Enable VFS"
+        default y
+        help
+            Build the file system (VFS / LittleFS / FATFS / REALFS / KV / BT FTL).
+            When disabled, vfs_wrap.c / kv.c / ftl.c / atcmd_fs.c are still built as
+            failing stubs, so callers of fopen()/rt_kv_*()/ftl_*() keep linking.
+
+# VFS_SUPPORTED (per SoC): VFS APIs exist on this core, real or stub
+# VFS_ENABLED: real implementation; VFS_SUPPORTED && !VFS_ENABLED builds the stubs
+config VFS_ENABLED
+    def_bool y
+    depends on VFS_SUPPORTED && VFS_MENU
+
+if VFS_MENU
+    comment "--- On-chip flash (registered at boot) ---"
+    choice
+        prompt "VFS1 partition, prefix \"vfs\" (KV / BT FTL)"
+        default VFS1_LITTLEFS
+        config VFS1_LITTLEFS
+            bool "LittleFS"
+    endchoice
+    # REALFS on VFS1 is not offered yet: KV / BT FTL do not work on it. Hidden and always n;
+    # move it back into the choice above (with a prompt) once KV / BT FTL are adapted.
+    config VFS1_REALFS
+        bool
+        default n
+        help
+            REALFS is single instance: no other target can use REALFS.
+    if VFS1_REALFS
+        choice
+            prompt "REALFS NOR backend"
+            default REALFS_FLASH_DIRECT
+            help
+                Select the NOR flash backend for REALFS.
+                On targets that also support NAND (SUPPORT_NAND_FLASH), the
+                actual flash type is decided at runtime by SHOULD_USE_NAND()
+                (OTP boot configuration). When the board boots from NAND,
+                the NAND/LBM path is used regardless of this selection; when
+                it boots from NOR, this choice takes effect.
+            config REALFS_FLASH_DIRECT
+                bool "Direct 4 KB block (nor-direct)"
+                help
+                    Standard NOR backend: each 4 KB erase sector is one
+                    logical block. Simplest and fastest for NOR flash.
+            config REALFS_FLASH_NOR_MAP
+                bool "Erase-aware map, 512 B block (nor-512)"
+                help
+                    Run REALFS in erase-aware (route-B) mode with a 512 B
+                    block (496 B usable) over raw NOR. Each 4 KB NOR sector
+                    is one segment of 8 pages; REALFS's own LBT and segment
+                    GC provide the thin logical->physical map with single-layer
+                    COW (no second FTL/log). Builds realfs_erasedev_nor.c.
+        endchoice
+        config REALFS_FLASH_NAND_LBM
+            bool
+            default SUPPORT_NAND_FLASH
+            depends on SUPPORT_NAND_FLASH
+            help
+                Automatically enabled when SUPPORT_NAND_FLASH is set.
+                Compiles the erase-aware REALFS core (route B) and the LBM
+                thin-FTL backend (realfs_erasedev_lbm.c). At runtime
+                SHOULD_USE_NAND() selects between NAND/LBM and the NOR
+                backend chosen above -- both backends are compiled in so the
+                same firmware image works on boards that boot from either
+                flash type.
+    endif
+    choice
+        prompt "VFS2 partition, prefix \"vfs2\""
+        default VFS2_NONE
+        config VFS2_NONE
+            bool "Not used"
+        config VFS2_LITTLEFS
+            bool "LittleFS"
+            depends on VFS1_REALFS
+            help
+                VFS1 and VFS2 share one LittleFS instance, so VFS2 can use LittleFS
+                only when VFS1 does not. VFS1 offers LittleFS only for now, so this
+                option is unavailable until VFS1_REALFS is opened up.
+        config VFS2_FATFS
+            bool "FATFS"
+    endchoice
+    config FATFS_WITHIN_APP_IMG
+        bool "Read-only FATFS image within APP image, prefix \"fat1\""
+        depends on !VFS2_FATFS
+        default n
+        help
+            Pack a read-only FatFs volume into the app image. It shares the
+            flash volume state with VFS2 FatFs, so they cannot coexist.
+            Mount failures never format this volume, regardless of the global
+            FATFS_READ_ONLY setting.
+    config LITTLEFS_WITHIN_APP_IMG
+        bool "Read-only LittleFS image within APP image, prefix \"rolfs\""
+        default n
+        help
+            Pack a read-only littlefs blob (with a PATTERN_ROLFS IMAGE_HEADER)
+            into the app image at post-build, and mount it read-only at the
+            "rolfs:" prefix at runtime. The blob is carried inside app.bin /
+            ota_all.bin, so it stays OTA-atomic with the firmware. Used by
+            ameba_claw to embed prebuilt Lua libraries and built-in skills.
+
+    comment "--- External media (registered by the application) ---"
+    comment "FATFS and REALFS mount at most one non-flash volume at a time."
+    config VFS_SECOND_FLASH
+        bool "Second flash"
+        default n
+        help
+            External second flash on the SPI-master bus.
+            NOR supports LittleFS and FATFS; NAND supports LittleFS and REALFS.
+            Unrelated to the SoC on-chip data-flash SECOND_FLASH_NOR /
+            SECOND_FLASH_NAND in the SoC project Kconfig.
+    if VFS_SECOND_FLASH
+        config VFS_SECOND_FLASH_NAND
+            bool "Second flash is external SPI NAND (else SPI NOR)"
+            default n
+            help
+                The second flash is a NAND, mounted through the LBM thin FTL.
+                Default n keeps the external SPI NOR path.
+        choice
+            prompt "File system on second flash"
+            default VFS_SECOND_FLASH_LITTLEFS
+            config VFS_SECOND_FLASH_LITTLEFS
+                bool "LittleFS"
+            config VFS_SECOND_FLASH_FATFS
+                bool "FATFS"
+                depends on !VFS_SECOND_FLASH_NAND
+            config VFS_SECOND_FLASH_REALFS
+                bool "REALFS"
+                depends on VFS_SECOND_FLASH_NAND && !VFS1_REALFS
+        endchoice
+    endif
+    config VFS_SD_CARD
+        bool "SD card, SDIO mode"
+        depends on SUPPORT_SDIOH
+        default n
+    if VFS_SD_CARD
+        choice
+            prompt "File system on SD card"
+            default VFS_SD_FATFS
+            config VFS_SD_FATFS
+                bool "FATFS"
+            config VFS_SD_REALFS
+                bool "REALFS"
+                depends on !VFS1_REALFS
+        endchoice
+        config VFS_SD_CARD_HOTPLUG
+            bool "SD card hotplug"
+            depends on VFS_SD_FATFS
+            default n
+    endif
+    config VFS_SD_SPI
+        bool "SD card, SPI mode (FATFS)"
+        default n
+        help
+            SD card / SD NAND over SPI. Only FATFS is supported.
+    config VFS_USB_HOST
+        bool "USB host mass storage (FATFS)"
+        depends on SUPPORT_FATFS_USB
+        # The USB mode (host or DRD) and the MSC class are chosen under CONFIG USB, never selected here:
+        # a select of USB_HOST_EN also fired in a DRD image, linking lib_usbh.a on top of lib_usb_drd.a
+        default n
+        help
+            USB mass-storage device on the USB host port. Only FATFS is supported.
+    config VFS_RAM
+        bool "RAM disk"
+        default n
+        help
+            Register a heap buffer as a VFS volume. Content is lost on
+            unregister / reset; every register starts from an empty, freshly
+            formatted disk. Only one RAM disk at a time.
+    if VFS_RAM
+        choice
+            prompt "File system on RAM disk"
+            default VFS_RAM_FATFS if USBD_MSC_RAM && !FATFS_READ_ONLY
+            default VFS_RAM_LITTLEFS
+            config VFS_RAM_LITTLEFS
+                bool "LittleFS"
+            config VFS_RAM_FATFS
+                bool "FATFS"
+                depends on !FATFS_READ_ONLY
+            config VFS_RAM_REALFS
+                bool "REALFS"
+                depends on !VFS1_REALFS
+        endchoice
+        choice
+            prompt "RAM disk medium"
+            default VFS_RAM_SRAM
+            config VFS_RAM_SRAM
+                bool "SRAM"
+            config VFS_RAM_PSRAM
+                bool "PSRAM"
+        endchoice
+        config VFS_RAM_SIZE_KB
+            int "RAM disk size (KB)"
+            range 16 16384
+            default 64 if VFS_RAM_SRAM
+            default 1024 if VFS_RAM_PSRAM
+        config VFS_RAM_LFS_BLOCK_SIZE
+            int "LittleFS block size on RAM disk (512/1024/2048/4096)"
+            depends on VFS_RAM_LITTLEFS
+            default 1024 if VFS_RAM_SRAM
+            default 4096 if VFS_RAM_PSRAM
+        config VFS_RAM_REALFS_BLOCK_SIZE
+            int "REALFS block size on RAM disk (512/1024/2048/4096)"
+            depends on VFS_RAM_REALFS
+            default 512 if VFS_RAM_SRAM
+            default 4096 if VFS_RAM_PSRAM
+    endif
+
+    # Keep FATFS_READ_ONLY independent of FS visibility/dependencies: RAM
+    # FATFS depends on it, and USB MSC media choices can select FATFS media.
+    menu "FATFS options"
+        config FATFS_READ_ONLY
+            bool "FATFS read only (all FATFS targets)"
+            default n
+            help
+                Build FatFs without its write functions to save code size.
+                This is global: every FATFS target becomes read only and must
+                be registered with VFS_RO; a VFS_RW register returns -1.
+                Mount failures do not format any FATFS target, so a blank
+                VFS2 partition stays unmounted. RAM cannot use FATFS because
+                each RAM registration must format the disk.
+                To make just one target read only, keep this off and register
+                that target with VFS_RO. APP-image FATFS is always read only
+                and is never formatted, independently of this setting.
+        config FATFS_SUPPORT_EXFAT
+            bool "FATFS Support EXFAT"
+    endmenu
+    menu "REALFS options"
+        visible if VFS_REALFS_INCLUDED
+        config REALFS_DEBUG
+            bool "REALFS debug dump / consistency check"
+            default n
+            help
+                Compile realfs_dump_* and realfs_check (defines
+                REALFS_ENABLE_DEBUG). Adds read-only inspection of the
+                superblock, buckets, files, and bitmap plus an integrity
+                checker -- handy for long-run debugging. Costs ~1-2 KB.
+    endmenu
+endif # VFS_MENU
+endmenu
+
+# Derived library and backend symbols follow the exact target choices.
+# Do not select them: depend on an FS choice or select a fixed-FS medium.
+config VFS_LITTLEFS_INCLUDED
+    def_bool VFS1_LITTLEFS || VFS2_LITTLEFS || LITTLEFS_WITHIN_APP_IMG || VFS_SECOND_FLASH_LITTLEFS || VFS_RAM_LITTLEFS
+
+config VFS_FATFS_INCLUDED
+    def_bool VFS2_FATFS || FATFS_WITHIN_APP_IMG || VFS_SECOND_FLASH_FATFS || VFS_SD_FATFS || VFS_SD_SPI || VFS_USB_HOST || VFS_RAM_FATFS
+
+config VFS_REALFS_INCLUDED
+    def_bool VFS1_REALFS || VFS_SECOND_FLASH_REALFS || VFS_SD_REALFS || VFS_RAM_REALFS
+
+config LITTLEFS_SECOND_FLASH
+    def_bool VFS_SECOND_FLASH_LITTLEFS
+
+config FATFS_SECOND_FLASH
+    def_bool VFS_SECOND_FLASH_FATFS
+
+config FATFS_SD_MODE
+    def_bool VFS_SD_FATFS
+
+config FATFS_SD_HOTPLUG
+    def_bool VFS_SD_CARD_HOTPLUG
+
+config FATFS_SD_SPI_MODE
+    def_bool VFS_SD_SPI
+
+config FATFS_USB_HOST
+    def_bool VFS_USB_HOST
+
+config REALFS_FLASH
+    def_bool VFS1_REALFS
+
+config REALFS_SD_MODE
+    def_bool VFS_SD_REALFS
+
+config REALFS_SECOND_FLASH_NAND
+    def_bool VFS_SECOND_FLASH_REALFS
+
+config REALFS_RAM
+    def_bool VFS_RAM_REALFS

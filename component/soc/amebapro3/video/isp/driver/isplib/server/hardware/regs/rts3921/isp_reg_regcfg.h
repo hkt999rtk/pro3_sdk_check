@@ -1,0 +1,50 @@
+
+//tool_version:1.4.35
+
+#ifndef _REGCFG_H_INC_
+#define _REGCFG_H_INC_
+
+#include <isp_reg.h>
+#include <isp_reg_base.h>
+
+#define RDMA_CTRL (REGCFG_BASE_ADDR + 0x00000000) //0x00007800
+#define RDMA_DDR_ADDR (REGCFG_BASE_ADDR + 0x00000004) //0x00007804
+#define RDMA_AXI_BURST_SIZE (REGCFG_BASE_ADDR + 0x00000008) //0x00007808
+#define RDMA_INT_EN (REGCFG_BASE_ADDR + 0x0000000c) //0x0000780c
+#define RDMA_INT_FLAG (REGCFG_BASE_ADDR + 0x00000010) //0x00007810
+
+/* Bits of RDMA_CTRL (0x00000000) */
+
+#define RDMA_TRIG_START_OFFSET 0
+#define RDMA_TRIG_START_BITS 1
+#define RDMA_TRIG_START_MASK (((1 << 1) - 1) << 0)
+
+#define RDMA_TRIG_STOP_OFFSET 1
+#define RDMA_TRIG_STOP_BITS 1
+#define RDMA_TRIG_STOP_MASK (((1 << 1) - 1) << 1)
+
+/* Bits of RDMA_DDR_ADDR (0x00000004) */
+
+#define CMD_DDR_START_ADDR_OFFSET 0
+#define CMD_DDR_START_ADDR_BITS 32
+#define CMD_DDR_START_ADDR_MASK (((1 << 32) - 1) << 0)
+
+/* Bits of RDMA_AXI_BURST_SIZE (0x00000008) */
+
+#define CFG_RD_BURST_LENGTH_OFFSET 0
+#define CFG_RD_BURST_LENGTH_BITS 1
+#define CFG_RD_BURST_LENGTH_MASK (((1 << 1) - 1) << 0)
+
+/* Bits of RDMA_INT_EN (0x0000000c) */
+
+#define RDMA_DONE_INT_EN_OFFSET 0
+#define RDMA_DONE_INT_EN_BITS 1
+#define RDMA_DONE_INT_EN_MASK (((1 << 1) - 1) << 0)
+
+/* Bits of RDMA_INT_FLAG (0x00000010) */
+
+#define RDMA_DONE_INT_CLR_OFFSET 0
+#define RDMA_DONE_INT_CLR_BITS 1
+#define RDMA_DONE_INT_CLR_MASK (((1 << 1) - 1) << 0)
+
+#endif /* _REGCFG_H_INC_ */

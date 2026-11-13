@@ -1,0 +1,7 @@
+{
+	"sections": [".ram_image2.entry", ".ssram.text", ".ssram.rodata", ".ssram.data", ".preinit_array", ".init_array", ".fini_array", ".ARM.extab", ".ARM.exidx"],
+	"entry": "__ssram_load_addr__",
+	"align_size": 128,
+	"boot_idx": "0x03030303"
+}
+ 

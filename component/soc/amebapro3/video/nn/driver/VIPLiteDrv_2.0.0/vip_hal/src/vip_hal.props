@@ -1,0 +1,128 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='All_Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='All_Debug|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='All_Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='All_Release|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='All_Debug|Win32'">
+    <OutDir>$(VIVANTE_SDK_DIR)\bin\</OutDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='All_Debug|x64'">
+    <OutDir>$(VIVANTE_SDK_DIR)\bin\</OutDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='All_Release|Win32'">
+    <OutDir>$(VIVANTE_SDK_DIR)\bin\</OutDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='All_Release|x64'">
+    <OutDir>$(VIVANTE_SDK_DIR)\bin\</OutDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='All_Debug|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <SDLCheck>true</SDLCheck>
+      <AdditionalIncludeDirectories>$(SolutionDir)\include\;$(SolutionDir)\common\;$(SolutionDir)\vip_drv\src\os\win32\;$(SolutionDir)\vip_drv\inc\;$(SolutionDir)\vip_hal\inc;$(SolutionDir)\vip_hal\src;$(SolutionDir)\vip_hal\src\os\win32\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_WINDLL;%(PreprocessorDefinitions);EMULATOR;_DEBUG;_CRT_SECURE_NO_DEPRECATE;VIVANTE_ENABLE_CAPPTURE=0;vpmdAUTO_CORRECT_CONFLICTS=1</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <TreatWarningAsError>true</TreatWarningAsError>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <ImportLibrary>$(VIVANTE_SDK_DIR)\lib\$(TargetName).lib</ImportLibrary>
+      <AdditionalLibraryDirectories>$(VIVANTE_SDK_DIR)\lib</AdditionalLibraryDirectories>
+      <AdditionalDependencies>vip_drv.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <ModuleDefinitionFile>vip_hal.def</ModuleDefinitionFile>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='All_Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <SDLCheck>true</SDLCheck>
+      <AdditionalIncludeDirectories>$(SolutionDir)\include\;$(SolutionDir)\common\;$(SolutionDir)\vip_drv\src\os\win32\;$(SolutionDir)\vip_drv\inc\;$(SolutionDir)\vip_hal\inc;$(SolutionDir)\vip_hal\src;$(SolutionDir)\vip_hal\src\os\win32\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_WINDLL;%(PreprocessorDefinitions);EMULATOR;_DEBUG;_CRT_SECURE_NO_DEPRECATE</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <MinimalRebuild>true</MinimalRebuild>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <ImportLibrary>$(VIVANTE_SDK_DIR)\lib\$(TargetName).lib</ImportLibrary>
+      <AdditionalLibraryDirectories>$(VIVANTE_SDK_DIR)\lib</AdditionalLibraryDirectories>
+      <AdditionalDependencies>vip_drv.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <ModuleDefinitionFile>vip_hal.def</ModuleDefinitionFile>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='All_Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_MBCS;%(PreprocessorDefinitions);EMULATOR;_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(SolutionDir)\include\;$(SolutionDir)\common\;$(SolutionDir)\vip_drv\src\os\win32\;$(SolutionDir)\vip_drv\inc\;$(SolutionDir)\vip_hal\inc;$(SolutionDir)\vip_hal\src;$(SolutionDir)\vip_hal\src\os\win32\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalLibraryDirectories>$(VIVANTE_SDK_DIR)\lib;</AdditionalLibraryDirectories>
+      <ModuleDefinitionFile>vip_hal.def</ModuleDefinitionFile>
+      <AdditionalDependencies>vip_drv.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <ImportLibrary>$(VIVANTE_SDK_DIR)\lib\$(TargetName).lib</ImportLibrary>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='All_Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_MBCS;%(PreprocessorDefinitions);EMULATOR;_CRT_SECURE_NO_WARNINGS</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(SolutionDir)\include\;$(SolutionDir)\common\;$(SolutionDir)\vip_drv\src\os\win32\;$(SolutionDir)\vip_drv\inc\;$(SolutionDir)\vip_hal\inc;$(SolutionDir)\vip_hal\src;$(SolutionDir)\vip_hal\src\os\win32\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalLibraryDirectories>$(VIVANTE_SDK_DIR)\lib;</AdditionalLibraryDirectories>
+      <ModuleDefinitionFile>vip_hal.def</ModuleDefinitionFile>
+      <AdditionalDependencies>vip_drv.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>$(VIVANTE_SDK_DIR)\lib\$(TargetName).lib</OutputFile>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="vip_hal.c" />
+    <ClCompile Include="vip_hal_hardware.c" />
+    <ClCompile Include="vip_hal_heap.c" />
+    <ClCompile Include="os\win32\vip_hal_os.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\inc\vip_hal.h" />
+    <ClInclude Include="..\inc\vip_hal_hardware.h" />
+    <ClInclude Include="vip_hal_heap.h" />
+    <ClInclude Include="..\inc\vip_hal_os_port.h" />
+    <ClInclude Include="os\win32\vip_hal_os.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="vip_hal.def" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>
